@@ -41,11 +41,29 @@ typedef struct {
     size_t count;
 } BridgePortList;
 
+/* 精简日志信息 */
+typedef struct {
+    char timeText[24];
+    char source[16];
+    char name[64];
+    uint32_t pid;
+    int ok;
+    char path[260];
+} BridgeLog;
+
+typedef struct {
+    BridgeLog *items;
+    size_t count;
+} BridgeLogList;
+
 /* 桥接 API */
 void bridge_scan_processes(BridgeProcList *out);
 void bridge_free_processes(BridgeProcList *l);
 void bridge_scan_ports(BridgePortList *out);
 void bridge_free_ports(BridgePortList *l);
+void bridge_load_logs(BridgeLogList *out);
+void bridge_free_logs(BridgeLogList *l);
+int bridge_kill_pid(uint32_t pid);
 
 #ifdef __cplusplus
 }

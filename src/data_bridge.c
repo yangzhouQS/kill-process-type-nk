@@ -6,6 +6,8 @@
 /* 引入原版数据层（Win32 头文件在此隔离） */
 #include "../../kill-process-type/src/process.h"
 #include "../../kill-process-type/src/net.h"
+#include "../../kill-process-type/src/klog.h"
+#include "../../kill-process-type/src/config.h"
 
 void bridge_scan_processes(BridgeProcList *out)
 {
@@ -72,4 +74,48 @@ void bridge_free_ports(BridgePortList *l)
     free(l->items);
     l->items = NULL;
     l->count = 0;
+}
+
+void bridge_load_logs(BridgeLogList *out)
+{
+    memset(out, 0, sizeof(*out));
+    ConfigInit();
+    KlogInit();
+    {
+        LogList logs;
+        memset(&logs, 0, sizeof(logs));
+        KlogLoad(&logs);
+        out->items = (BridgeLog *)calloc(logs.count ? logs.count : 1, sizeof(BridgeLog));
+        if (!out->items) {
+            KlogFree(&logs);
+            return;
+        }
+        for (size_t i = 0; i < logs.count; i++) {
+            BridgeLog *d = &out->items[i];
+            LogEntry *s = &logs.items[i];
+            WideCharToMultiByte(CP_UTF8, 0, s->timeText, -1, d->timeText, 24, NULL, NULL);
+            WideCharToMultiByte(CP_UTF8, 0, s->source, -1, d->source, 16, NULL, NULL);
+            WideCharToMultiByte(CP_UTF8, 0, s->name, -1, d->name, 64, NULL, NULL);
+            d->pid = s->pid;
+            d->ok = s->ok;
+            WideCharToMultiByte(CP_UTF8, 0, s->path, -1, d->path, 260, NULL, NULL);
+        }
+        out->count = logs.count;
+        KlogFree(&logs);
+    }
+}
+
+void bridge_free_logs(BridgeLogList *l)
+{
+    free(l->items);
+    l->items = NULL;
+    l->count = 0;
+}
+
+int bridge_kill_pid(uint32_t pid)
+{
+    KillResult kr;
+    DWORD p = (DWORD)pid;
+    KillPids(&p, 1, &kr, NULL);
+    return kr.okCount > 0 ? 0 : -1;
 }
