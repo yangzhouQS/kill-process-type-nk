@@ -1,5 +1,5 @@
 /* main.c — kill-process-type-nk 主入口
- * 纯 raylib 2D 即时模式 UI（MD3 风格），通过 data_bridge 隔离 Win32
+ * 纯 raylib 2D 绘制 + data_bridge 隔离 Win32
  */
 #include <stdio.h>
 #include <string.h>
@@ -8,8 +8,6 @@
 #include "raylib.h"
 #include "data_bridge.h"
 #include "tray_bridge.h"
-#include "../../kill-process-type/src/config.h"
-#include "../../kill-process-type/src/klog.h"
 
 /* ==================== MD3 主题 ==================== */
 
@@ -75,7 +73,6 @@ static int filter_len = 0;
 static int sort_col = 0;
 static int sort_desc = 1;
 static int selected_pid = -1;
-static int selected_row = -1;
 static Font g_font;
 static char status_text[128] = "就绪";
 
@@ -351,12 +348,6 @@ static void draw_view_logs(float y, float h)
     }
 }
 
-/* ==================== 布局辅助 ==================== */
-
-static float GetRowY(void) { return LIST_Y; }
-static float GetListY(void) { return LIST_Y + 4 + MD_COL_H; }
-static float GetRowH(void) { return MD_ROW_H; }
-
 /* ==================== 主入口 ==================== */
 
 int main(void)
@@ -366,8 +357,27 @@ int main(void)
     InitWindow(1200, 700, "kill-process-type-nk");
     SetTargetFPS(60);
 
-    g_font = LoadFontEx("C:\\Windows\\Fonts\\msyh.ttc", 28, NULL, 250);
-    SetTextureFilter(g_font.texture, TEXTURE_FILTER_BILINEAR);
+    /* 加载字体（尝试加载系统 YaHei，失败用默认） */
+    {
+        const char *fontPaths[] = {
+            "C:\\Windows\\Fonts\\msyh.ttc",
+            "C:\\Windows\\Fonts\\simhei.ttf",
+            "C:\\Windows\\Fonts\\arial.ttf",
+        };
+        BOOL loaded = FALSE;
+        for (int i = 0; i < 3 && !loaded; i++) {
+            if (FileExists(fontPaths[i])) {
+                g_font = LoadFontEx(fontPaths[i], 28, NULL, 250);
+                SetTextureFilter(g_font.texture, TEXTURE_FILTER_BILINEAR);
+                loaded = TRUE;
+            }
+        }
+        if (!loaded) {
+            g_font = GetFontDefault();
+            loaded = TRUE;
+        }
+        MD_FONT = g_font;
+    }
 
     /* 主题 */
     md_style_set(MD_THEME_DARK);
@@ -383,24 +393,6 @@ int main(void)
 
     /* 主循环 */
     while (!WindowShouldClose()) {
-        /* 托盘消息 */
-        {
-            int action = tray_poll();
-            if (action == 2) break;
-            else if (action == 3) md_refresh();
-        }
-
-        /* 自动刷新（10 秒） */
-        {
-            static double lastRefresh = 0;
-            if (GetTime() - lastRefresh > 10.0) {
-                lastRefresh = GetTime();
-                md_refresh();
-                SortProcs();
-            }
-        }
-
-        /* 绘制 */
         BeginDrawing();
         ClearBackground(g_md.surface);
 
