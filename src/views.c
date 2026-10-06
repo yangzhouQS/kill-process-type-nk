@@ -8,8 +8,6 @@
 #include "raylib.h"
 #include "data_bridge.h"
 #include "tray_bridge.h"
-#include "../../kill-process-type/src/config.h"
-#include "../../kill-process-type/src/klog.h"
 
 /* ==================== MD3 主题 ==================== */
 
@@ -98,14 +96,17 @@ static void md_refresh_logs(void)
 /* ==================== MD3 绘制辅助 ==================== */
 
 static Font MD_FONT;
-static float MD_FS = 14.0f;
-static float MD_FS_S = 13.0f;
-static float MD_ROW_H = 30.0f;
-static float MD_COL_H = 32.0f;
+static float MD_FS = 14.0f;   /* 正文字号 */
+static float MD_FS_S = 13.0f; /* 小字 */
 
 static void DrawMDText(const char *text, float x, float y, float size, Color color)
 {
     DrawTextEx(MD_FONT, text, (Vector2){x, y}, size, 1, color);
+}
+
+static Vector2 MeasureMD(const char *text, float size)
+{
+    return MeasureTextEx(MD_FONT, text, size, 1);
 }
 
 static void DrawMDButton(Rectangle r, const char *text)
@@ -126,18 +127,15 @@ static void DrawCard(float x, float y, float w, float h)
     DrawRectangleRoundedLines((Rectangle){x, y, w, h}, 0.015f, 8, g_md.cardBorder);
 }
 
-/* ==================== 布局常量 ==================== */
+/* ==================== 视图布局 ==================== */
 
-#define PAD            12.0f
-#define TOOLBAR_Y      8.0f
-#define TOOLBAR_H      52.0f
-#define TABBAR_Y       68.0f
-#define TABBAR_H       44.0f
-#define FILTER_Y       120.0f
-#define FILTER_H       40.0f
-#define LIST_Y         168.0f
-
-/* ==================== 视图绘制 ==================== */
+#define TOOLBAR_Y    8.0f
+#define TOOLBAR_H    52.0f
+#define TABBAR_Y     68.0f
+#define TABBAR_H     44.0f
+#define FILTER_Y     120.0f
+#define FILTER_H     40.0f
+#define LIST_Y       168.0f
 
 static void draw_toolbar(void)
 {
@@ -213,7 +211,7 @@ static void draw_col_header(float x, float y, float w, const char **cols, const 
     DrawRectangle((int)x, (int)(y + MD_COL_H - 1), (int)w, 1, g_md.outline);
 }
 
-/* ==================== 视图：全部进程 ==================== */
+/* ==================== 视图：全部进程 / Node-Python ==================== */
 
 static void draw_view_procs(float y, float h)
 {
@@ -230,6 +228,9 @@ static void draw_view_procs(float y, float h)
     for (size_t i = 0; i < procs.count; i++) {
         BridgeProc *p = &procs.items[i];
         char pid[16], ppid[16], mem[32];
+
+        if (current_view == 1 && p->type == 0) continue;
+        if (filter_len > 0 && !strstr(p->name, filter_buf)) continue;
 
         snprintf(pid, sizeof(pid), "%lu", (unsigned long)p->pid);
         snprintf(ppid, sizeof(ppid), "%lu", (unsigned long)p->ppid);
@@ -349,91 +350,4 @@ static void draw_view_logs(float y, float h)
 
         rowY += MD_ROW_H;
     }
-}
-
-/* ==================== 布局辅助 ==================== */
-
-static float GetRowY(void) { return LIST_Y; }
-static float GetListY(void) { return LIST_Y + 4 + MD_COL_H; }
-static float GetRowH(void) { return MD_ROW_H; }
-
-/* ==================== 主入口 ==================== */
-
-int main(void)
-{
-    /* 初始化 */
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
-    InitWindow(1200, 700, "kill-process-type-nk");
-    SetTargetFPS(60);
-
-    g_font = LoadFontEx("C:\\Windows\\Fonts\\msyh.ttc", 28, NULL, 250);
-    SetTextureFilter(g_font.texture, TEXTURE_FILTER_BILINEAR);
-
-    /* 主题 */
-    md_style_set(MD_THEME_DARK);
-
-    /* 初始扫描 */
-    memset(&procs, 0, sizeof(procs));
-    memset(&ports, 0, sizeof(ports));
-    memset(&logs, 0, sizeof(logs));
-    md_refresh();
-
-    /* 托盘 */
-    tray_init();
-
-    /* 主循环 */
-    while (!WindowShouldClose()) {
-        /* 托盘消息 */
-        {
-            int action = tray_poll();
-            if (action == 2) break;
-            else if (action == 3) md_refresh();
-        }
-
-        /* 自动刷新（10 秒） */
-        {
-            static double lastRefresh = 0;
-            if (GetTime() - lastRefresh > 10.0) {
-                lastRefresh = GetTime();
-                md_refresh();
-                SortProcs();
-            }
-        }
-
-        /* 绘制 */
-        BeginDrawing();
-        ClearBackground(g_md.surface);
-
-        draw_toolbar();
-        draw_tabs();
-        draw_filter_bar();
-
-        float listY = LIST_Y;
-        float listH = (float)GetScreenHeight() - listY - PAD - 32;
-
-        if (current_view <= 1)
-            draw_view_procs(listY, listH);
-        else if (current_view == 2)
-            draw_view_ports(listY, listH);
-        else if (current_view == 3)
-            draw_view_logs(listY, listH);
-
-        /* 状态栏 */
-        {
-            float sy = (float)GetScreenHeight() - 28;
-            DrawRectangle(0, (int)sy, GetScreenWidth(), 28, g_md.toolbarBg);
-            DrawTextEx(MD_FONT, status_text, (Vector2){PAD, sy + 7}, 13, 1,
-                       g_md.onSurfaceVariant);
-        }
-
-        EndDrawing();
-    }
-
-    /* 清理 */
-    tray_shutdown();
-    bridge_free_processes(&procs);
-    bridge_free_ports(&ports);
-    bridge_free_logs(&logs);
-    CloseWindow();
-    return 0;
 }
