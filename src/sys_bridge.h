@@ -1,4 +1,4 @@
-/* sys_bridge.h — Win32 系统操作桥接（打开/终端/URL/提权修复/单实例/自启动） */
+﻿/* sys_bridge.h — Win32 系统操作桥接（打开/终端/URL/提权修复/单实例/自启动） */
 #ifndef SYS_BRIDGE_H
 #define SYS_BRIDGE_H
 
@@ -16,6 +16,8 @@ int SysIsAutoRun(void);
 int SysSetAutoRun(int on);                 /* 0 成功 */
 void SysFlashTrayWindow(void);
 int SysRelaunch(const char *path, const char *cmdline); /* 杀后原参数拉起 */
+void SysClampWindowRect(int *x, int *y, int *w, int *h); /* 防呆：限制到虚拟屏幕内 */
+int SysRestartElevated(void); /* 以管理员权限重启自身（成功不返回） */
 unsigned char *SysExtractIconRGBA(const char *exePath, int size, int *outW, int *outH); /* 调用方 free */             /* 唤起已有实例窗口 */
 
 #ifdef __cplusplus

@@ -389,3 +389,17 @@ int AiParseRiskJson(const char *text, unsigned int *pids, int *risks, int max)
     }
     return n;
 }
+int AiParseCleanJson(const char *text, unsigned int *pids, int max)
+{
+    const char *p = text;
+    int n = 0;
+    while (n < max && (p = strstr(p, "\"pid\"")) != NULL) {
+        const char *q = strchr(p, ':');
+        if (!q) break;
+        unsigned long pid = strtoul(q + 1, NULL, 10);
+        p = q + 1;
+        if (pid > 0)
+            pids[n++] = (unsigned int)pid;
+    }
+    return n;
+}

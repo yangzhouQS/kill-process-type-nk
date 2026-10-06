@@ -76,6 +76,15 @@ void MainToolbarAction(int id)
         break;
     case 2: KillAllOfType(1); break;
     case 3: KillAllOfType(2); break;
+    case 5: {
+        int rc = SysRestartElevated();
+        if (rc == 0) {
+            NotifyBalloon(T_ADMIN_OK);
+            exit(0); /* 管理员实例已启动，本实例退出 */
+        }
+        SetFlashMsg(T_ADMIN_FAIL);
+        break;
+    }
     case 4: {
         unsigned int *pids = NULL;
         int n = 0;
@@ -175,6 +184,7 @@ int main(int argc, char **argv)
     int winH = (int)bridge_config_long("WinH", 900);
     if (winW < 900) winW = 900;
     if (winH < 560) winH = 560;
+    SysClampWindowRect(&winX, &winY, &winW, &winH);
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
     InitWindow(winW, winH, "kill-process-type-nk");
@@ -210,7 +220,12 @@ int main(int argc, char **argv)
     tray_init();
     tray_hook_main_window();
 
+    /* CPU/内存时序监控：启动采样线程，node/python 自动注册 */
+    bridge_monitor_start();
+    bridge_monitor_sync(&gApp.procs);
+
     double lastOrphanRun = GetTime();
+    double lastAnomalyCheck = GetTime();
     if (bridge_config_bool("StartMinimized", 0))
         MinimizeToTray();
 
@@ -288,8 +303,27 @@ int main(int argc, char **argv)
 
         /* 自动刷新 */
         if (gApp.autoRefreshOn && gApp.modal == 0 &&
-            GetTime() - gApp.lastRefresh > (double)gApp.autoRefreshSec)
+            GetTime() - gApp.lastRefresh > (double)gApp.autoRefreshSec) {
             MainUiRefresh();
+            bridge_monitor_sync(&gApp.procs);
+        }
+
+        /* 异常检测（AnomalyWatch）：node/python 内存 12s 连涨 >10MB 告警 */
+        if (gApp.anomalyWatch && GetTime() - lastAnomalyCheck > 12.0) {
+            lastAnomalyCheck = GetTime();
+            for (size_t i = 0; i < gApp.procs.count; i++) {
+                BridgeProc *p = &gApp.procs.items[i];
+                unsigned long long growth = 0;
+                if (p->type == 0) continue;
+                if (bridge_monitor_mem_growth(p->pid, &growth)) {
+                    char msg[192];
+                    snprintf(msg, sizeof(msg), T_ANOMALY_FMT, p->name,
+                             (unsigned long)p->pid, (unsigned long)growth);
+                    NotifyBalloon(msg);
+                    break; /* 一次最多提示一个，避免气泡刷屏 */
+                }
+            }
+        }
 
         /* 自动孤儿清理 */
         if (gApp.orphanAutoEnable &&

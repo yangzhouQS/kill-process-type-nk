@@ -64,6 +64,7 @@ typedef struct {
     int *treeDepth;             /* 每行深度 */
     int treeCount;
     unsigned long long *treeMem; /* 子树内存合计 */
+    int *treeHasKids;            /* 每行是否有子节点（▸▾） */
     BridgeProcList projProcs;   /* 项目分组排序 */
     int *projGroupStart;        /* 每组起始行 */
     char (*projGroupName)[260];
@@ -125,6 +126,8 @@ void DrawAiPanel(void);
 void AiChatSubmit(void);
 void AiPanelShowText(const char *text); /* 清空输出并显示文本 */
 void AiApplyRisk(void);                 /* 解析 AI 结果 JSON 并应用风险列 */
+void AiApplyCleanStrategy(void);        /* 按清理策略 JSON 终止进程 */
+void UiOnColumnResize(void);            /* 列宽拖拽结束回调（写配置） */
 void DrawAiJobPoll(void);   /* 轮询异步 AI 结果 */
 
 /* ---------- 视图（ui_views.c） ---------- */

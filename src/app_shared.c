@@ -1,4 +1,5 @@
-﻿/* app_shared.c — 主题/字体/全局状态/通用控件 实现 */
+/* app_shared.c — 主题/字体/全局状态/通用控件 实现 */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +11,7 @@
 #include "font_codepoints.h"
 #include "ai_bridge.h"
 #include "ui_views.h"
+#include "tray_bridge.h"
 
 /* ================= 全局状态 ================= */
 AppState gApp;
@@ -309,7 +311,7 @@ int DrawTextButton(const char *label, Rectangle r, int enabled)
     if (hover) bg = ColorBrightness(bg, 0.15f);
     DrawRectangleRounded(r, 0.35f, 8, bg);
     Vector2 ts = MeasureTxt(label, FS_BTN);
-    DrawTxt(label, r.x + (r.width - ts.x) / 2, r.y + (r.height - ts.y) / 2,
+    DrawTxt(label, r.x + (r.width - ts.x) / 2, r.y + (r.height - ts.y) / 2 + 1,
             FS_BTN, enabled ? gPal.onPrimary : gPal.onSurfaceVariant);
     if (hover && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
         clicked = 1;
@@ -372,7 +374,7 @@ void DrawToolbar(void)
     struct { const char *label; float w; int id; } btns[] = {
         {T_REFRESH, 108, 0}, {T_KILL_SEL, 142, 1},
         {T_KILL_NODE, 178, 2}, {T_KILL_PY, 190, 3},
-        {T_CLEAN_ORPHAN, 142, 4},
+        {T_CLEAN_ORPHAN, 142, 4}, {T_ADMIN, 142, 5},
     };
     for (int i = 0; i < 5; i++) {
         if (DrawTextButton(btns[i].label, (Rectangle){bx, by, btns[i].w, 46}, 1)) {
@@ -411,26 +413,34 @@ void DrawTabBar(void)
     };
     float x = 8, y = 88;
     float W = (float)GetScreenWidth() - 16;
-    float tw = W / TAB_COUNT;
 
-    DrawRectangle((int)x, (int)y, (int)W, 56, gPal.cardBg);
-    for (int i = 0; i < TAB_COUNT; i++) {
-        Rectangle tr = {x + i * tw, y, tw, 56};
-        int sel = (gApp.curTab == i);
-        if (PointInRect(tr) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-            gApp.curTab = i;
-            if (i == TAB_LOGS) {
-                extern void RefreshLogs(void);
-                RefreshLogs();
+    DrawRectangle((int)x, (int)y, (int)W, 40, gPal.cardBg);
+    {
+        static const char *labels[TAB_COUNT] = {
+            TT_TAB_ALL, TT_TAB_NODEPY, TT_TAB_TREE, TT_TAB_PROJECT,
+            TT_TAB_PORTS, TT_TAB_LOGS, TT_TAB_AI
+        };
+        float cx = x;
+        for (int i = 0; i < TAB_COUNT; i++) {
+            float tw = MeasureTxt(labels[i], FS_BTN).x + 48;
+            Rectangle tr = {cx, y + 4, tw, 32};
+            int sel = (gApp.curTab == i);
+            if (PointInRect(tr) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+                gApp.curTab = i;
+                if (i == TAB_LOGS) {
+                    extern void RefreshLogs(void);
+                    RefreshLogs();
+                }
             }
+            if (sel)
+                DrawRectangleRec(tr, gPal.primary);
+            else if (PointInRect(tr))
+                DrawRectangleRec(tr, gPal.rowHover);
+            Vector2 ts = MeasureTxt(labels[i], FS_BTN);
+            DrawTxt(labels[i], tr.x + (tw - ts.x) / 2, tr.y + (32 - ts.y) / 2 + 1,
+                    FS_BTN, sel ? gPal.onPrimary : gPal.onSurfaceVariant);
+            cx += tw + 4;
         }
-        if (sel)
-            DrawRectangleRec(tr, gPal.primary);
-        else if (PointInRect(tr))
-            DrawRectangleRec(tr, gPal.rowHover);
-        Vector2 ts = MeasureTxt(labels[i], 15);
-        DrawTxt(labels[i], tr.x + (tw - ts.x) / 2, tr.y + (40 - ts.y) / 2, 15,
-                sel ? gPal.onPrimary : gPal.onSurfaceVariant);
     }
 }
 
@@ -491,6 +501,7 @@ void DrawTableHeader(float x, float y, float w, const char **cols,
             } else {
                 dragCol = -1;
                 SetMouseCursor(MOUSE_CURSOR_DEFAULT);
+                UiOnColumnResize();
             }
         } else if (PointInRect((Rectangle){x, y, w, 44})) {
             float edge = x + 8;
@@ -628,6 +639,27 @@ void AiApplyRisk(void)
         RebuildViews();
 }
 
+void AiApplyCleanStrategy(void)
+{
+    if (!gApp.aiOutput)
+        return;
+    unsigned int pids[256];
+    int n = AiParseCleanJson(gApp.aiOutput, pids, 256);
+    int ok = 0;
+    for (int i = 0; i < n; i++) {
+        if (bridge_kill_pid(pids[i]) == 0)
+            ok++;
+    }
+    if (n > 0) {
+        char msg[96];
+        snprintf(msg, sizeof(msg), A_APPLY_DONE, ok);
+        SetFlashMsg("%s", msg);
+        if (gApp.balloonNotify)
+            tray_notify("AI 清理策略", msg);
+        RebuildViews();
+    }
+}
+
 void DrawAiJobPoll(void)
 {
     int st = AiPoll();
@@ -725,6 +757,13 @@ void DrawAiPanel(void)
     if (gApp.aiRunning)
         DrawTxt(A_RUNNING, outR.x + outR.width - 130, (float)baseY + 4, FS_HDR, gPal.warnC);
     EndList();
+
+    if (gApp.aiMode == 5 && !gApp.aiRunning && gApp.aiOutput && gApp.aiOutput[0]) {
+        if (DrawTextButton(A_APPLY, (Rectangle){px + 16, py + ph - 70, 150, 40}, 1)) {
+            AiApplyCleanStrategy();
+            gApp.aiMode = 1;
+        }
+    }
 
     if (gApp.aiMode == 0) {
         Rectangle inR = {px + 16, py + ph - 74, pw - 32 - 96, 40};

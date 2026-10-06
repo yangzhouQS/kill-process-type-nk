@@ -51,7 +51,7 @@ static LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                 PostMessage(hwnd, WM_NULL, 0, 0);
                 DestroyMenu(m);
             }
-        } else if (lp == WM_LBUTTONUP) {
+        } else if (lp == NIN_BALLOONUSERCLICK) {        PostMessage(hwnd, WM_COMMAND, IDM_TRAY_SHOW, 0);    } else if (lp == WM_LBUTTONUP) {
             PostMessage(hwnd, WM_COMMAND, IDM_TRAY_SHOW, 0);
         }
     } else if (msg == WM_COMMAND) {

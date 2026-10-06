@@ -97,6 +97,12 @@
 #define A_BASE_SAVED  "基线快照已保存（%d 个进程）"
 #define A_BASE_LOST   "基线文件不存在，请先保存基线"
 #define A_BASE_TITLE  "基线对比结果"
+#define A_APPLY       "按策略终止"
+#define A_APPLY_DONE  "策略执行完成：终止 %d 个进程"
+#define T_ADMIN       "管理员重启"
+#define T_ADMIN_OK    "已启动管理员实例，本窗口即将关闭"
+#define T_ADMIN_FAIL  "管理员重启被取消或失败"
+#define T_ANOMALY_FMT "⚠ %s（PID %lu）内存持续增长：12秒内 +%luMB"
 
 /* 右键菜单：进程行 */
 #define M_KILL      "终止选中"

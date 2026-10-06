@@ -1,4 +1,4 @@
-/* data_bridge.h — 数据层桥接（隔离 Win32 与 raylib 的符号冲突）
+﻿/* data_bridge.h — 数据层桥接（隔离 Win32 与 raylib 的符号冲突）
  * main.c 只 include 此头文件，不直接 include process.h/net.h/config.h/klog.h
  */
 #ifndef DATA_BRIDGE_H
@@ -22,6 +22,7 @@ typedef struct {
     uint64_t memBytes;
     int type; /* 0=other 1=node 2=python */
     int aiRisk; /* 0=unknown 1=low 2=med 3=high */
+    float cpuPct; /* CPU%%（monitor 采样，UI 填充） */
 } BridgeProc;
 
 typedef struct {
@@ -91,6 +92,13 @@ int bridge_kill_pid(uint32_t pid);
 
 /* 日志文件路径（宽字符，供打开文件夹用） */
 const char *bridge_log_path_utf8(void);
+
+/* CPU/内存时序监控（node/python 自动注册） */
+void bridge_monitor_start(void);
+void bridge_monitor_sync(const BridgeProcList *pl); /* 注册全部 node/python */
+float bridge_monitor_cpu(uint32_t pid);            /* 最近一次 CPU%%（未监控返回 -1） */
+int bridge_monitor_mem_growth(uint32_t pid, unsigned long long *growthMB); /* 12s 内存增量 */
+int bridge_monitor_count(void);
 
 /* 配置读写 */
 int bridge_config_bool(const char *key, int def);

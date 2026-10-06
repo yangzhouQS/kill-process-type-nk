@@ -1,4 +1,4 @@
-/* data_bridge.c — 数据层桥接实现（在此文件中 include Win32 头文件） */
+﻿/* data_bridge.c — 数据层桥接实现（在此文件中 include Win32 头文件） */
 #include "data_bridge.h"
 #include <stdlib.h>
 #include <string.h>
@@ -63,6 +63,7 @@ void bridge_scan_processes(BridgeProcList *out)
         d->ppid = s->ppid;
         d->memBytes = s->memBytes;
         d->type = (int)s->type;
+        d->cpuPct = 0.0f;
         /* 宽字符转 UTF-8 */
         WideCharToMultiByte(CP_UTF8, 0, s->name, -1, d->name, 64, NULL, NULL);
         WideCharToMultiByte(CP_UTF8, 0, s->path, -1, d->path, 260, NULL, NULL);
@@ -172,6 +173,53 @@ void bridge_free_reserved(BridgeRangeList *l)
     l->items = NULL;
     l->count = 0;
 }
+void bridge_monitor_start(void)
+{
+    MonitorStart();
+}
+
+void bridge_monitor_sync(const BridgeProcList *pl)
+{
+    for (size_t i = 0; i < pl->count; i++) {
+        if (pl->items[i].type != 0)
+            MonitorAdd(pl->items[i].pid);
+    }
+}
+
+float bridge_monitor_cpu(uint32_t pid)
+{
+    unsigned long long mem[60];
+    double cpu[60];
+    int n = MonitorGetSeries(pid, mem, cpu, 60);
+    if (n <= 0)
+        return -1.0f;
+    return (float)cpu[n - 1];
+}
+
+int bridge_monitor_mem_growth(uint32_t pid, unsigned long long *growthMB)
+{
+    unsigned long long mem[60];
+    double cpu[60];
+    int n = MonitorGetSeries(pid, mem, cpu, 60);
+    *growthMB = 0;
+    if (n < 6)
+        return 0;
+    int increasing = 1;
+    for (int j = n - 5; j < n; j++)
+        if (mem[j] < mem[j - 1]) { increasing = 0; break; }
+    unsigned long long growth = mem[n - 1] - mem[n - 6];
+    if (increasing && growth > 10ULL * 1024 * 1024) {
+        *growthMB = growth / (1024 * 1024);
+        return 1;
+    }
+    return 0;
+}
+
+int bridge_monitor_count(void)
+{
+    return MonitorCount();
+}
+
 const char *bridge_log_path_utf8(void)
 {
     static char buf[520];

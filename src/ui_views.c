@@ -33,6 +33,28 @@ static int selPortRow = -1;
 static int *sSortCol = &sortAllCol;
 static int *sSortDesc = &sortAllDesc;
 
+/* 树形折叠状态（按 PID） */
+static unsigned long sFolded[512];
+static int sFoldedCount = 0;
+
+static int FoldIsOn(unsigned long pid)
+{
+    for (int i = 0; i < sFoldedCount; i++)
+        if (sFolded[i] == pid) return 1;
+    return 0;
+}
+
+static void FoldToggle(unsigned long pid)
+{
+    for (int i = 0; i < sFoldedCount; i++)
+        if (sFolded[i] == pid) {
+            sFolded[i] = sFolded[--sFoldedCount];
+            return;
+        }
+    if (sFoldedCount < 512)
+        sFolded[sFoldedCount++] = pid;
+}
+
 /* ---------- 工具 ---------- */
 
 static int PtIn(Rectangle r)
@@ -114,6 +136,7 @@ static void TreeFree(void)
 {
     free(gApp.treeDepth); gApp.treeDepth = NULL;
     free(gApp.treeMem); gApp.treeMem = NULL;
+    free(gApp.treeHasKids); gApp.treeHasKids = NULL;
     free(sNodes); sNodes = NULL;
     free(sKids); sKids = NULL;
     sNodeCount = 0;
@@ -128,10 +151,14 @@ static int TreeDfs(int node, int depth, int *outPos)
     gApp.treeDepth[myPos] = depth;
     gApp.treeMem[myPos] = sFiltered[sNodes[node].idx].memBytes;
     gApp.treeProcs.items[myPos] = sFiltered[sNodes[node].idx];
+    gApp.treeHasKids[myPos] = sNodes[node].childCount > 0;
     unsigned long long sub = 0;
-    for (int k = 0; k < sNodes[node].childCount; k++)
-        sub += (unsigned long long)TreeDfs(sKids[sNodes[node].firstChild + k],
-                                           depth + 1, outPos);
+    int folded = FoldIsOn(sFiltered[sNodes[node].idx].pid);
+    if (!folded) {
+        for (int k = 0; k < sNodes[node].childCount; k++)
+            sub += (unsigned long long)TreeDfs(sKids[sNodes[node].firstChild + k],
+                                               depth + 1, outPos);
+    }
     /* 子树合计 = 自身 + 子树 */
     gApp.treeMem[myPos] = sFiltered[sNodes[node].idx].memBytes + sub;
     return myPos;
@@ -145,9 +172,11 @@ static void RebuildTree(void)
     sNodes = (TreeNode *)calloc((size_t)n, sizeof(TreeNode));
     gApp.treeDepth = (int *)calloc((size_t)n, sizeof(int));
     gApp.treeMem = (unsigned long long *)calloc((size_t)n, sizeof(unsigned long long));
+    gApp.treeHasKids = (int *)calloc((size_t)n, sizeof(int));
     gApp.treeProcs.items = (BridgeProc *)calloc((size_t)n, sizeof(BridgeProc));
     sKids = (int *)calloc((size_t)n, sizeof(int));
-    if (!sNodes || !gApp.treeDepth || !gApp.treeMem || !gApp.treeProcs.items || !sKids) {
+    if (!sNodes || !gApp.treeDepth || !gApp.treeMem || !gApp.treeHasKids ||
+        !gApp.treeProcs.items || !sKids) {
         TreeFree();
         return;
     }
@@ -285,6 +314,9 @@ void RebuildViews(void)
     /* 2) 排序 */
     if (gApp.curTab == TAB_ALL) { sSortCol = &sortAllCol; sSortDesc = &sortAllDesc; }
     SortFiltered(*sSortCol, *sSortDesc);
+    /* 2.5) CPU% 采样填充 */
+    for (int i = 0; i < sFilteredCount; i++)
+        sFiltered[i].cpuPct = bridge_monitor_cpu(sFiltered[i].pid);
 
     /* 3) 树/项目 */
     RebuildTree();
@@ -327,21 +359,14 @@ void RebuildViews(void)
              (int)gApp.procs.count, nodeN, pyN, (int)gApp.ports.count);
 }
 
-void ViewsInit(void)
-{
-    gApp.reservedRanges = NULL;
-    gApp.reservedCount = 0;
-    BridgeRangeList rl;
-    bridge_scan_reserved(&rl);
-    gApp.reservedRanges = rl.items;
-    gApp.reservedCount = (int)rl.count;
-    RebuildViews();
-}
+
 
 /* ---------- 视图绘制 ---------- */
 
-static const char *gColsAll[] = {C_NAME, C_PID, C_PPID, C_MEM, C_TYPE, C_PATH, C_CMDLINE, C_RISK};
-static float gCwAll[] = {236, 80, 80, 110, 90, 270, 300, 70};
+
+
+static const char *gColsAll[] = {C_NAME, C_PID, C_PPID, C_MEM, C_CPU, C_TYPE, C_PATH, C_CMDLINE, C_RISK};
+static float gCwAll[] = {220, 80, 80, 110, 80, 90, 230, 240, 70};
 static const char *gColsTree[] = {C_TREE, C_PID, C_PPID, C_MEM, C_TYPE, C_PATH};
 static float gCwTree[] = {376, 90, 90, 120, 90, 420};
 static const char *gColsProj[] = {C_PROJECT, C_NAME, C_PID, C_MEM, C_TYPE, C_CMDLINE};
@@ -350,6 +375,33 @@ static const char *gColsPort[] = {C_PORT, C_PROTO, C_PID, C_NAME, C_TYPE, C_MEM,
 static float gCwPort[] = {100, 80, 90, 190, 90, 120, 400};
 static const char *gColsLog[] = {C_TIME, C_SOURCE, C_NAME, C_PID, C_RESULT, C_PATH};
 static float gCwLog[] = {190, 100, 190, 90, 80, 400};
+
+void UiOnColumnResize(void)
+{
+    for (int i = 0; i < 9; i++) {
+        char key[16];
+        snprintf(key, sizeof(key), "cwAll%d", i);
+        bridge_config_set_long(key, (long)gCwAll[i]);
+    }
+}
+
+void ViewsInit(void)
+{
+    gApp.reservedRanges = NULL;
+    gApp.reservedCount = 0;
+    BridgeRangeList rl;
+    bridge_scan_reserved(&rl);
+    gApp.reservedRanges = rl.items;
+    gApp.reservedCount = (int)rl.count;
+    for (int i = 0; i < 9; i++) {
+        char key[16];
+        snprintf(key, sizeof(key), "cwAll%d", i);
+        long v = bridge_config_long(key, 0);
+        if (v >= 56 && v <= 900) gCwAll[i] = (float)v;
+    }
+    RebuildViews();
+}
+
 
 /* ---------- 通用行绘制（cells 数组 + 截断） ---------- */
 
@@ -381,14 +433,15 @@ static void DrawRowIcon(const BridgeProc *p, float x, float rowY)
 }
 
 static int BuildProcCells(const BridgeProc *p, char cells[][220], int indent,
-                          int isTree, unsigned long long memOverride)
+                          int isTree, unsigned long long memOverride, int hasKids)
 {
     if (isTree) {
+        const char *arrow = hasKids ? (FoldIsOn(p->pid) ? "▸ " : "▾ ") : "";
         if (indent > 0)
-            snprintf(cells[0], 220, "%*s%s %s", indent * 2, "",
-                     indent == 1 ? "└" : "│", p->name);
+            snprintf(cells[0], 220, "%*s%s%s%s", indent * 2, "",
+                     indent == 1 ? "└" : "│", arrow, p->name);
         else
-            snprintf(cells[0], 220, "%s", p->name);
+            snprintf(cells[0], 220, "%s%s", arrow, p->name);
         snprintf(cells[1], 220, "%lu", (unsigned long)p->pid);
         snprintf(cells[2], 220, "%lu", (unsigned long)p->ppid);
         FormatMem(memOverride ? memOverride : p->memBytes, cells[3], 220);
@@ -400,12 +453,16 @@ static int BuildProcCells(const BridgeProc *p, char cells[][220], int indent,
     snprintf(cells[1], 220, "%lu", (unsigned long)p->pid);
     snprintf(cells[2], 220, "%lu", (unsigned long)p->ppid);
     FormatMem(memOverride ? memOverride : p->memBytes, cells[3], 220);
-    snprintf(cells[4], 220, "%s", ProcTypeName(p->type));
-    snprintf(cells[5], 220, "%s", p->path[0] ? p->path : P_NOREAD);
-    snprintf(cells[6], 220, "%s", p->cmdline[0] ? p->cmdline : "-");
-    snprintf(cells[7], 220, "%s",
+    if (p->cpuPct >= 0)
+        snprintf(cells[4], 220, "%.1f%%", (double)p->cpuPct);
+    else
+        snprintf(cells[4], 220, "-");
+    snprintf(cells[5], 220, "%s", ProcTypeName(p->type));
+    snprintf(cells[6], 220, "%s", p->path[0] ? p->path : P_NOREAD);
+    snprintf(cells[7], 220, "%s", p->cmdline[0] ? p->cmdline : "-");
+    snprintf(cells[8], 220, "%s",
              p->aiRisk ? (p->aiRisk >= 3 ? "高" : p->aiRisk == 2 ? "中" : "低") : "-");
-    return isTree ? 6 : 8;
+    return isTree ? 6 : 9;
 }
 
 static void ProcRowColors(const BridgeProc *p, Color *colors, int ncols)
@@ -427,14 +484,19 @@ static void DrawCellText(const char *s, float x, float y, Color c)
 
 static void DrawProcRowCommon(const BridgeProc *p, float x, float rowY,
                               float *cw, int indent, int isTree,
-                              unsigned long long memOverride)
+                              unsigned long long memOverride, int hasKids)
 {
-    char cells[8][220];
-    Color colors[8];
-    int ncols = BuildProcCells(p, cells, indent, isTree, memOverride);
+    char cells[9][220];
+    Color colors[9];
+    int ncols = BuildProcCells(p, cells, indent, isTree, memOverride, hasKids);
     ProcRowColors(p, colors, ncols);
-    if (!isTree && p->aiRisk >= 3 && ncols >= 8)
-        colors[7] = gPal.errorC;
+    if (ncols >= 9) {
+        colors[4] = p->cpuPct > 50.0f ? gPal.errorC
+                    : p->cpuPct > 20.0f ? gPal.warnC
+                    : gPal.onSurfaceVariant;
+    }
+    if (!isTree && p->aiRisk >= 3 && ncols >= 9)
+        colors[8] = gPal.errorC;
     DrawRowIcon(p, x, rowY);
     DrawRowCells(cells, colors, cw, ncols, x, rowY, 1);
 }
@@ -459,8 +521,8 @@ static void DrawViewAll(float x, float y, float w, float h, int nodePyOnly)
     (void)nodePyOnly;
     DrawTableHeader(x, y, w, gColsAll, gCwAll, 8, sSortCol, sSortDesc);
     int baseY = BeginList(x, y, w, h, (float)sFilteredCount, &gApp.scrollProc);
-    char cells[8][220];
-    Color colors[8];
+    char cells[9][220];
+    Color colors[9];
     for (int i = 0; i < sFilteredCount; i++) {
         float rowY = (float)baseY + i * (float)ROW_H;
         BridgeProc *p = &sFiltered[i];
@@ -469,10 +531,15 @@ static void DrawViewAll(float x, float y, float w, float h, int nodePyOnly)
             DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.rowAlt);
         Rectangle rowR = {x, rowY, w, ROW_H};
         if (ProcRowInput(rowR, p)) break;
-        int ncols = BuildProcCells(p, cells, 0, 0, 0);
+        int ncols = BuildProcCells(p, cells, 0, 0, 0, 0);
         ProcRowColors(p, colors, ncols);
-        if (p->aiRisk >= 3 && ncols >= 8)
-            colors[7] = gPal.errorC;
+        if (ncols >= 9) {
+            colors[4] = p->cpuPct > 50.0f ? gPal.errorC
+                        : p->cpuPct > 20.0f ? gPal.warnC
+                        : gPal.onSurfaceVariant;
+        }
+        if (p->aiRisk >= 3 && ncols >= 9)
+            colors[8] = gPal.errorC;
         DrawRowIcon(p, x, rowY);
         DrawRowCells(cells, colors, gCwAll, ncols, x, rowY, 1);
     }
@@ -492,8 +559,16 @@ static void DrawViewTree(float x, float y, float w, float h)
         if (i % 2 == 1)
             DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.rowAlt);
         Rectangle rowR = {x, rowY, w, ROW_H};
+        Rectangle arrowZone = {x, rowY, 34 + gApp.treeDepth[i] * 18, ROW_H};
+        if (PtIn(arrowZone) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) &&
+            gApp.treeHasKids[i]) {
+            FoldToggle(p->pid);
+            RebuildTree();
+            continue;
+        }
         if (ProcRowInput(rowR, p)) break;
-        int ncols = BuildProcCells(p, cells, gApp.treeDepth[i], 1, gApp.treeMem[i]);
+        int ncols = BuildProcCells(p, cells, gApp.treeDepth[i], 1, gApp.treeMem[i],
+                                   gApp.treeHasKids[i]);
         ProcRowColors(p, colors, ncols);
         DrawRowIcon(p, x, rowY);
         DrawRowCells(cells, colors, gCwTree, ncols, x, rowY, 1);

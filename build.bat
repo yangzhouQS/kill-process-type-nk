@@ -26,14 +26,14 @@ for %%F in (rcore rglfw rshapes rtext rtextures raudio) do (
 
 rem --- original kill-process-type modules ---
 set ORIG=..\kill-process-type\src
-for %%F in (config klog process net project peb ai) do (
+for %%F in (config klog process net project peb ai monitor) do (
     if not exist build\kp_%%F.o gcc -O1 %WARN% -I%ORIG% -c -o build\kp_%%F.o %ORIG%\%%F.c || goto :err
 )
 
 rem --- link ---
 set OBJS=build\main.o build\app_shared.o build\ui_views.o build\data_bridge.o build\tray_bridge.o build\sys_bridge.o build\ai_bridge.o build\app_res.o
 set OBJS=%OBJS% build\rcore.o build\rglfw.o build\rshapes.o build\rtext.o build\rtextures.o build\raudio.o
-set OBJS=%OBJS% build\kp_config.o build\kp_klog.o build\kp_process.o build\kp_net.o build\kp_project.o build\kp_peb.o build\kp_ai.o
+set OBJS=%OBJS% build\kp_config.o build\kp_klog.o build\kp_process.o build\kp_net.o build\kp_project.o build\kp_peb.o build\kp_ai.o build\kp_monitor.o
 gcc -o build\app.exe %OBJS% -lopengl32 -lgdi32 -lwinmm -lws2_32 -lshell32 -ladvapi32 -lwininet -lpsapi -liphlpapi -lcomdlg32 || goto :err
 
 echo BUILD OK: build\app.exe

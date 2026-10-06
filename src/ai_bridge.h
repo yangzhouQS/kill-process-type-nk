@@ -22,6 +22,7 @@ void AiStartLogReview(const BridgeLogList *logs);    /* 日志复盘 */
 void AiStartDiag(const BridgeProcList *pl);          /* 全局诊断快照 */
 void AiStartCleanStrategy(const BridgeProcList *pl); /* AI 清理策略 */
 int AiParseRiskJson(const char *text, unsigned int *pids, int *risks, int max);
+int AiParseCleanJson(const char *text, unsigned int *pids, int max); /* 可终止清单 */
 
 #ifdef __cplusplus
 }
