@@ -146,6 +146,40 @@ void bridge_free_logs(BridgeLogList *l)
     l->count = 0;
 }
 
+void bridge_scan_reserved(BridgeRangeList *out)
+{
+    PortRangeList rl;
+    memset(&rl, 0, sizeof(rl));
+    out->items = NULL;
+    out->count = 0;
+    if (ScanReservedPortRanges(&rl) > 0 && rl.count) {
+        out->items = (BridgeRange *)malloc(rl.count * sizeof(BridgeRange));
+        if (out->items) {
+            for (size_t i = 0; i < rl.count; i++) {
+                out->items[i].start = rl.items[i].start;
+                out->items[i].end = rl.items[i].end;
+                out->items[i].tcp = rl.items[i].tcp;
+            }
+            out->count = rl.count;
+        }
+    }
+    FreePortRangeList(&rl);
+}
+
+void bridge_free_reserved(BridgeRangeList *l)
+{
+    free(l->items);
+    l->items = NULL;
+    l->count = 0;
+}
+const char *bridge_log_path_utf8(void)
+{
+    static char buf[520];
+    const WCHAR *w = KlogGetPath();
+    if (!w) return ".";
+    WideCharToMultiByte(CP_UTF8, 0, w, -1, buf, sizeof(buf), NULL, NULL);
+    return buf;
+}
 int bridge_kill_pid(uint32_t pid)
 {
     KillResult kr;

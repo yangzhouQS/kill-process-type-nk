@@ -1,185 +1,353 @@
-/* main.c — kill-process-type-nk 主入口
- * 纯 raylib 2D 绘制（MD3 风格），通过 data_bridge 隔离 Win32
+﻿/* main.c — kill-process-type-nk 主程序
+ * 纯 raylib 2D UI + 中文界面 + 深/浅主题 + 托盘 + 单实例 + 自动刷新
  */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
 #include "raylib.h"
+#include "app_shared.h"
+#include "ui_views.h"
+#include "ui_text.h"
 #include "data_bridge.h"
 #include "tray_bridge.h"
+#include "ai_bridge.h"
+#include "sys_bridge.h"
 
-/* ==================== 主题 ==================== */
-
-typedef enum { THEME_DARK = 0, THEME_LIGHT = 1 } Theme;
-
-typedef struct {
-    Color primary, onPrimary;
-    Color surface, onSurface;
-    Color surfaceVariant, onSurfaceVariant;
-    Color outline, error, success;
-    Color cardBg, cardBorder;
-    Color rowAlt, rowHover;
-    Color toolbarBg;
-} Palette;
-
-static Palette pal;
-static Theme cur_theme = THEME_DARK;
-
-static void apply_theme(Theme t)
+static void RefreshData(void)
 {
-    cur_theme = t;
-    if (t == THEME_DARK) {
-        pal.primary            = (Color){0x4F,0x9C,0xFF,255};
-        pal.onPrimary          = (Color){0x00,0x14,0x2E,255};
-        pal.surface            = (Color){0x14,0x12,0x11,255};
-        pal.onSurface          = (Color){0xE5,0xE2,0xE0,255};
-        pal.surfaceVariant     = (Color){0x2A,0x27,0x26,255};
-        pal.onSurfaceVariant   = (Color){0xCA,0xC7,0xC5,255};
-        pal.outline            = (Color){0x5C,0x58,0x56,255};
-        pal.error              = (Color){0xFF,0x8A,0x80,255};
-        pal.success            = (Color){0x69,0xF0,0xAE,255};
-        pal.cardBg             = (Color){0x1E,0x1C,0x1B,255};
-        pal.cardBorder         = (Color){0x38,0x35,0x33,255};
-        pal.rowAlt             = (Color){0x24,0x22,0x21,255};
-        pal.rowHover           = (Color){0x2E,0x2B,0x2A,255};
-        pal.toolbarBg          = (Color){0x1A,0x18,0x17,255};
-    } else {
-        pal.primary            = (Color){0x1A,0x6B,0x3C,255};
-        pal.onPrimary          = (Color){0xFF,0xFF,0xFF,255};
-        pal.surface            = (Color){0xFD,0xF8,0xF3,255};
-        pal.onSurface          = (Color){0x1C,0x1B,0x1A,255};
-        pal.surfaceVariant     = (Color){0xE8,0xE3,0xDD,255};
-        pal.onSurfaceVariant   = (Color){0x49,0x45,0x44,255};
-        pal.outline            = (Color){0x79,0x75,0x74,255};
-        pal.error              = (Color){0xB3,0x26,0x1E,255};
-        pal.success            = (Color){0x1B,0x5E,0x20,255};
-        pal.cardBg             = (Color){0xFF,0xFF,0xFF,255};
-        pal.cardBorder         = (Color){0xE0,0xDB,0xD5,255};
-        pal.rowAlt             = (Color){0xF5,0xF0,0xEA,255};
-        pal.rowHover           = (Color){0xE8,0xE3,0xDD,255};
-        pal.toolbarBg          = (Color){0xF8,0xF3,0xEE,255};
+    bridge_free_processes(&gApp.procs);
+    bridge_free_ports(&gApp.ports);
+    bridge_scan_processes(&gApp.procs);
+    bridge_scan_ports(&gApp.ports);
+    gApp.lastRefresh = GetTime();
+}
+
+void MainUiRefresh(void)
+{
+    RefreshData();
+    RebuildViews();
+}
+
+static void NotifyBalloon(const char *text)
+{
+    if (gApp.balloonNotify)
+        tray_notify("Node/Python 进程终结者", text);
+}
+
+static void KillAllOfType(int type)
+{
+    const char *name = (type == 1) ? "Node" : "Python";
+    int count = 0;
+    for (size_t i = 0; i < gApp.procs.count; i++)
+        if (gApp.procs.items[i].type == type)
+            count++;
+    if (count == 0) {
+        SetFlashMsg("未发现 %s 进程", name);
+        return;
     }
-}
-
-/* ==================== 状态 ==================== */
-
-static int cur_tab = 0;
-static BridgeProcList procs;
-static BridgePortList ports;
-static BridgeLogList logs;
-static char filter_buf[256];
-static int filter_len;
-static int selected_pid = -1;
-static Font g_font;
-static char status_text[128] = "Ready";
-
-static void refresh_data(void)
-{
-    bridge_free_processes(&procs);
-    bridge_free_ports(&ports);
-    bridge_scan_processes(&procs);
-    bridge_scan_ports(&ports);
-    snprintf(status_text, sizeof(status_text),
-             "Procs: %d  Ports: %d", (int)procs.count, (int)ports.count);
-}
-
-static void refresh_logs(void)
-{
-    bridge_free_logs(&logs);
-    bridge_load_logs(&logs);
-}
-
-/* ==================== Font ==================== */
-
-static Font app_font;
-
-static void load_font(void)
-{
-    const char *paths[] = {
-        "C:\\Windows\\Fonts\\msyh.ttc",
-        "C:\\Windows\\Fonts\\simhei.ttf",
-        "C:\\Windows\\Fonts\\arial.ttf",
-    };
-    for (int i = 0; i < 3; i++) {
-        if (FileExists(paths[i])) {
-            app_font = LoadFontEx(paths[i], 28, NULL, 250);
-            SetTextureFilter(app_font.texture, TEXTURE_FILTER_BILINEAR);
-            return;
+    int ok = 0, fail = 0;
+    for (size_t i = 0; i < gApp.procs.count; i++) {
+        if (gApp.procs.items[i].type == type) {
+            if (bridge_kill_pid(gApp.procs.items[i].pid) == 0) ok++;
+            else fail++;
         }
     }
-    app_font = GetFontDefault();
+    MainUiRefresh();
+    char msg[128];
+    snprintf(msg, sizeof(msg), "%s 清理完成：成功 %d，失败 %d", name, ok, fail);
+    SetFlashMsg("%s", msg);
+    NotifyBalloon(msg);
 }
 
-#define F(x, y, txt, sz, c) DrawTextEx(app_font, txt, (Vector2){(x), (y)}, sz, 1, c)
-
-/* ==================== Main ==================== */
-
-int main(void)
+void MainToolbarAction(int id)
 {
+    switch (id) {
+    case 0: MainUiRefresh(); break;
+    case 1:
+        if (gApp.selectedPid > 0) {
+            bridge_kill_pid((unsigned int)gApp.selectedPid);
+            MainUiRefresh();
+            SetFlashMsg(N_KILLED_SEL);
+            NotifyBalloon(N_KILLED_SEL);
+        } else {
+            SetFlashMsg(N_NO_SEL);
+        }
+        break;
+    case 2: KillAllOfType(1); break;
+    case 3: KillAllOfType(2); break;
+    case 4: {
+        unsigned int *pids = NULL;
+        int n = 0;
+        CollectOrphanPids(&pids, &n);
+        if (n == 0) {
+            SetFlashMsg(N_ORPH_NONE);
+            break;
+        }
+        int ok = 0;
+        for (int i = 0; i < n; i++)
+            if (bridge_kill_pid(pids[i]) == 0) ok++;
+        free(pids);
+        MainUiRefresh();
+        char msg[128];
+        snprintf(msg, sizeof(msg), N_KILLED_FMT, "手动", ok, n);
+        SetFlashMsg("%s", msg);
+        NotifyBalloon(msg);
+        break;
+    }
+    }
+}
+
+/* ---------- CLI 模式（/list /ports /kill） ---------- */
+
+static int RunCli(int argc, char **argv)
+{
+    if (argc < 2) return -1;
+    if (strcmp(argv[1], "/list") == 0) {
+        bridge_init();
+        BridgeProcList pl;
+        bridge_scan_processes(&pl);
+        printf("%-8s %-8s %-10s %-12s %s\n", "PID", "PPID", "MEM(MB)", "TYPE", "NAME");
+        for (size_t i = 0; i < pl.count; i++) {
+            printf("%-8lu %-8lu %-10.1f %-12s %s\n",
+                   (unsigned long)pl.items[i].pid,
+                   (unsigned long)pl.items[i].ppid,
+                   (double)pl.items[i].memBytes / 1048576.0,
+                   pl.items[i].type == 1 ? "node" :
+                   pl.items[i].type == 2 ? "python" : "-",
+                   pl.items[i].name);
+        }
+        bridge_free_processes(&pl);
+        return 0;
+    }
+    if (strcmp(argv[1], "/ports") == 0) {
+        bridge_init();
+        BridgePortList nl;
+        bridge_scan_ports(&nl);
+        printf("%-8s %-6s %s\n", "PORT", "PROTO", "PID");
+        for (size_t i = 0; i < nl.count; i++)
+            printf("%-8lu %-6s %lu\n", (unsigned long)nl.items[i].port,
+                   nl.items[i].tcp ? "TCP" : "UDP", (unsigned long)nl.items[i].pid);
+        bridge_free_ports(&nl);
+        BridgeRangeList rl;
+        bridge_scan_reserved(&rl);
+        printf("\nreserved ranges: %lu\n", (unsigned long)rl.count);
+        for (size_t i = 0; i < rl.count; i++)
+            printf("  %u-%u (%s)\n", rl.items[i].start, rl.items[i].end,
+                   rl.items[i].tcp ? "TCP" : "UDP");
+        bridge_free_reserved(&rl);
+        return 0;
+    }
+    if (strcmp(argv[1], "/kill") == 0 && argc >= 3) {
+        bridge_init();
+        int ok = 0;
+        for (int i = 2; i < argc; i++) {
+            unsigned long pid = strtoul(argv[i], NULL, 10);
+            if (bridge_kill_pid((unsigned int)pid) == 0) {
+                printf("killed %lu\n", pid);
+                ok++;
+            } else {
+                printf("failed %lu\n", pid);
+            }
+        }
+        return ok == argc - 2 ? 0 : 1;
+    }
+    return -1;
+}
+
+/* ---------- 主程序 ---------- */
+
+int main(int argc, char **argv)
+{
+    {
+        int cr = RunCli(argc, argv);
+        if (cr >= 0) return cr;
+    }
+
+    if (SysSingleInstance())
+        return 0;
+
+    bridge_init();
+
+    int winX = (int)bridge_config_long("WinX", 80);
+    int winY = (int)bridge_config_long("WinY", 60);
+    int winW = (int)bridge_config_long("WinW", 1470);
+    int winH = (int)bridge_config_long("WinH", 900);
+    if (winW < 900) winW = 900;
+    if (winH < 560) winH = 560;
+
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
-    InitWindow(1200, 700, "kill-process-type-nk");
+    InitWindow(winW, winH, "kill-process-type-nk");
+    SetWindowPosition(winX, winY);
     SetTargetFPS(60);
 
-    load_font();
-    apply_theme(THEME_DARK);
+    if (FileExists("assets/icon.png")) {
+        Image icon = LoadImage("assets/icon.png");
+        if (icon.data) {
+            SetWindowIcon(icon);
+            UnloadImage(icon);
+        }
+    }
 
-    memset(&procs, 0, sizeof(procs));
-    memset(&ports, 0, sizeof(ports));
-    memset(&logs, 0, sizeof(logs));
-    refresh_data();
+    memset(&gApp, 0, sizeof(gApp));
+    LoadAppFont();
+    ApplyTheme((AppTheme)bridge_config_long("ui.theme", 0));
+
+    gApp.autoRefreshOn = bridge_config_bool("AutoRefresh", 1);
+    gApp.autoRefreshSec = bridge_config_long("AutoRefreshInterval", 10);
+    gApp.orphanAutoEnable = bridge_config_bool("OrphanAutoEnable", 0);
+    gApp.orphanIntervalMin = bridge_config_long("OrphanIntervalMin", 30);
+    gApp.orphanNodePyOnly = bridge_config_bool("OrphanNodePyOnly", 1);
+    gApp.anomalyWatch = bridge_config_bool("AnomalyWatch", 0);
+    gApp.balloonNotify = bridge_config_bool("BalloonNotify", 1);
+
+    ViewsInit();
+    RefreshData();
+    RebuildViews();
+    bridge_free_logs(&gApp.logs);
+    bridge_load_logs(&gApp.logs);
+
+    tray_init();
+    tray_hook_main_window();
+
+    double lastOrphanRun = GetTime();
+    if (bridge_config_bool("StartMinimized", 0))
+        MinimizeToTray();
 
     while (!WindowShouldClose()) {
+        int act = tray_poll();
+        if (act == 1) {
+            tray_toggle_main_window();
+        }
+        else if (act == 8) {
+            int now = SysIsAutoRun();
+            SysSetAutoRun(!now);
+            gApp.autoRun = !now;
+            if (gApp.balloonNotify)
+                tray_notify("开机自启动",
+                            !now ? "已开启：登录后自动驻留托盘。" : "已关闭。");
+        }
+        else if (act == 2) break;
+        else if (act == 3) MainUiRefresh();
+        else if (act == 4) KillAllOfType(1);
+        else if (act == 5) KillAllOfType(2);
+        else if (act == 6) MainToolbarAction(4);
+        else if (act == 7) {
+            gApp.modal = 1;
+            SettingsLoad();
+        }
+        else if (act == 9) {
+            /* AI 清理策略 */
+            if (AiAvailable()) {
+                gApp.modal = 2;
+                gApp.aiMode = 5;
+                if (gApp.aiOutput) gApp.aiOutput[0] = 0;
+                AiStartCleanStrategy(&gApp.procs);
+            } else {
+                SetFlashMsg(A_NOKILO);
+            }
+        }
+        else if (act == 10) BaselineSave();
+        else if (act == 11) BaselineCompare();
+
+        /* 键盘输入：AI 输入框 > 筛选框 */
+        int ch;
+        while ((ch = GetCharPressed()) != 0) {
+            if (gApp.modal == 2) {
+                if ((ch >= 32 && ch < 127) || (ch >= 0x4E00 && ch <= 0x9FA5)) {
+                    if (gApp.aiInputLen < 500) {
+                        gApp.aiInput[gApp.aiInputLen++] = (char)ch;
+                        gApp.aiInput[gApp.aiInputLen] = 0;
+                    }
+                }
+            } else if (gApp.modal == 0) {
+                if (ch >= 32 && ch < 127) {
+                    if (gApp.filterLen < 250) {
+                        gApp.filterBuf[gApp.filterLen++] = (char)ch;
+                        gApp.filterBuf[gApp.filterLen] = 0;
+                        RebuildViews();
+                    }
+                }
+            }
+        }
+        if (IsKeyPressed(KEY_BACKSPACE)) {
+            if (gApp.modal == 2 && gApp.aiInputLen > 0) {
+                gApp.aiInput[--gApp.aiInputLen] = 0;
+            } else if (gApp.modal == 0 && gApp.filterLen > 0) {
+                gApp.filterBuf[--gApp.filterLen] = 0;
+                RebuildViews();
+            }
+        }
+        if (gApp.modal == 2 && IsKeyPressed(KEY_ENTER) && gApp.aiInputLen && !gApp.aiRunning)
+            AiChatSubmit();
+        if (IsKeyPressed(KEY_ESCAPE) && gApp.modal) {
+            if (!gApp.menuOpen) gApp.modal = 0;
+        }
+        if (IsKeyPressed(KEY_F5))
+            MainUiRefresh();
+
+        /* 自动刷新 */
+        if (gApp.autoRefreshOn && gApp.modal == 0 &&
+            GetTime() - gApp.lastRefresh > (double)gApp.autoRefreshSec)
+            MainUiRefresh();
+
+        /* 自动孤儿清理 */
+        if (gApp.orphanAutoEnable &&
+            GetTime() - lastOrphanRun > (double)gApp.orphanIntervalMin * 60.0) {
+            lastOrphanRun = GetTime();
+            unsigned int *pids = NULL;
+            int n = 0;
+            CollectOrphanPids(&pids, &n);
+            if (n > 0) {
+                int ok = 0;
+                for (int i = 0; i < n; i++)
+                    if (bridge_kill_pid(pids[i]) == 0) ok++;
+                char msg[128];
+                snprintf(msg, sizeof(msg), N_KILLED_FMT, "定时", ok, n);
+                SetFlashMsg("%s", msg);
+                NotifyBalloon(msg);
+                MainUiRefresh();
+            }
+            free(pids);
+        }
+
+        DrawAiJobPoll();
+
         BeginDrawing();
-        ClearBackground(pal.surface);
+        ClearBackground(gPal.surface);
 
-        /* Toolbar */
-        DrawRectangleRounded((Rectangle){8, 8, (float)GetScreenWidth() - 16, 52},
-                             0.08f, 8, pal.toolbarBg);
-        float bx = 20, by = 14;
-        const char *btnLabels[] = {"Refresh", "Kill Sel", "Kill Node", "Kill Py"};
-        float btnW[] = {90, 100, 140, 130};
-        for (int i = 0; i < 4; i++) {
-            DrawRectangleRounded((Rectangle){bx, by, btnW[i], 28}, 0.4f, 8, pal.primary);
-            DrawTextEx(app_font, btnLabels[i],
-                (Vector2){bx + 8, by + 7}, 13, 1, pal.onPrimary);
-            bx += btnW[i] + 8;
-        }
+        DrawToolbar();
+        DrawTabBar();
+        DrawFilterBar();
 
-        /* Tab bar */
-        DrawRectangle(8, 68, (int)(W - 16), 44, pal.cardBg);
-        for (int i = 0; i < 4; i++) {
-            int sel = (cur_tab == i);
-            if (sel)
-                DrawRectangle((int)(8 + i * 110), (int)(68), (int)110, (int)44,
-                              pal.primary);
-            DrawTextEx(app_font, tabs[i],
-                (Vector2){8 + i * 110 + 8, 68 + 14}, 14, 1,
-                sel ? pal.onPrimary : pal.onSurfaceVariant);
-        }
+        float listY = 214;
+        float listH = (float)GetScreenHeight() - listY - 36;
+        DrawCurrentView(8, listY, (float)GetScreenWidth() - 16, listH);
 
-        /* Filter bar */
-        DrawRectangleRounded((Rectangle){8, 120, (float)GetScreenWidth() - 16, 40},
-                             0.15f, 8, pal.cardBg);
-        DrawTextEx(app_font, "Filter:", (Vector2){20, 120 + 10}, 13, 1,
-                   pal.onSurfaceVariant);
-        DrawRectangle((int)70, (int)(124), (int)(GetScreenWidth() - 90),
-                      (int)(32), pal.surfaceVariant);
+        DrawStatusBar();
+        DrawContextMenu();
 
-        /* Status bar */
-        {
-            float sy = (float)GetScreenHeight() - 28;
-            DrawRectangle(0, (int)sy, GetScreenWidth(), 28, pal.toolbarBg);
-            DrawTextEx(app_font, status_text, (Vector2){12, sy + 7}, 13, 1,
-                       pal.onSurfaceVariant);
-        }
+        if (gApp.modal == 1)
+            DrawSettingsModal();
+        else if (gApp.modal == 2)
+            DrawAiPanel();
 
         EndDrawing();
     }
 
+    /* 保存窗口位置 */
+    Vector2 wp = GetWindowPosition();
+    Vector2 ws = {(float)GetScreenWidth(), (float)GetScreenHeight()};
+    bridge_config_set_long("WinX", (long)wp.x);
+    bridge_config_set_long("WinY", (long)wp.y);
+    bridge_config_set_long("WinW", (long)ws.x);
+    bridge_config_set_long("WinH", (long)ws.y);
+
     tray_shutdown();
-    bridge_free_processes(&procs);
-    bridge_free_ports(&ports);
+    AiShutdown();
+    IconCacheFree();
+    bridge_free_processes(&gApp.procs);
+    bridge_free_ports(&gApp.ports);
     CloseWindow();
     return 0;
 }

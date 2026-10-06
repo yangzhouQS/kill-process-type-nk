@@ -72,8 +72,25 @@ void bridge_free_ports(BridgePortList *l);
 void bridge_load_logs(BridgeLogList *out);
 void bridge_free_logs(BridgeLogList *l);
 
+/* 保留端口区间（winnat excludedportrange） */
+typedef struct {
+    unsigned int start, end;
+    int tcp;
+} BridgeRange;
+
+typedef struct {
+    BridgeRange *items;
+    size_t count;
+} BridgeRangeList;
+
+void bridge_scan_reserved(BridgeRangeList *out);
+void bridge_free_reserved(BridgeRangeList *l);
+
 /* 终止进程（自动落日志），返回 0=成功 */
 int bridge_kill_pid(uint32_t pid);
+
+/* 日志文件路径（宽字符，供打开文件夹用） */
+const char *bridge_log_path_utf8(void);
 
 /* 配置读写 */
 int bridge_config_bool(const char *key, int def);

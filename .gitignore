@@ -3,3 +3,7 @@ build/
 *.exe
 vendor/raylib/
 vendor/nuklear/
+assets/fonts/msyh.ttc
+tools/out.txt
+build/menu_debug.log
+baseline.txt
