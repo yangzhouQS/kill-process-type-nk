@@ -1,5 +1,5 @@
 /* data_bridge.h — 数据层桥接（隔离 Win32 与 raylib 的符号冲突）
- * main.c 只 include 此头文件，不直接 include process.h/net.h
+ * main.c 只 include 此头文件，不直接 include process.h/net.h/config.h/klog.h
  */
 #ifndef DATA_BRIDGE_H
 #define DATA_BRIDGE_H
@@ -21,6 +21,7 @@ typedef struct {
     char project[260];
     uint64_t memBytes;
     int type; /* 0=other 1=node 2=python */
+    int aiRisk; /* 0=unknown 1=low 2=med 3=high */
 } BridgeProc;
 
 typedef struct {
@@ -32,7 +33,7 @@ typedef struct {
 typedef struct {
     uint32_t port;
     uint32_t pid;
-    int tcp;  /* 1=TCP 0=UDP */
+    int tcp;
     int ipv6;
 } BridgePort;
 
@@ -56,14 +57,29 @@ typedef struct {
     size_t count;
 } BridgeLogList;
 
-/* 桥接 API */
+/* 初始化（ConfigInit + KlogInit） */
+void bridge_init(void);
+
+/* 进程扫描 */
 void bridge_scan_processes(BridgeProcList *out);
 void bridge_free_processes(BridgeProcList *l);
+
+/* 端口扫描 */
 void bridge_scan_ports(BridgePortList *out);
 void bridge_free_ports(BridgePortList *l);
+
+/* 日志加载 */
 void bridge_load_logs(BridgeLogList *out);
 void bridge_free_logs(BridgeLogList *l);
+
+/* 终止进程（自动落日志），返回 0=成功 */
 int bridge_kill_pid(uint32_t pid);
+
+/* 配置读写 */
+int bridge_config_bool(const char *key, int def);
+long bridge_config_long(const char *key, long def);
+void bridge_config_set_bool(const char *key, int val);
+void bridge_config_set_long(const char *key, long val);
 
 #ifdef __cplusplus
 }

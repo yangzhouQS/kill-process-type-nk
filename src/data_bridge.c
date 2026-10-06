@@ -9,6 +9,40 @@
 #include "../../kill-process-type/src/klog.h"
 #include "../../kill-process-type/src/config.h"
 
+void bridge_init(void)
+{
+    ConfigInit();
+    KlogInit();
+}
+
+int bridge_config_bool(const char *key, int def)
+{
+    WCHAR wkey[64];
+    MultiByteToWideChar(CP_UTF8, 0, key, -1, wkey, 64);
+    return ConfigGetBool(wkey, def);
+}
+
+long bridge_config_long(const char *key, long def)
+{
+    WCHAR wkey[64];
+    MultiByteToWideChar(CP_UTF8, 0, key, -1, wkey, 64);
+    return ConfigGetLong(wkey, def);
+}
+
+void bridge_config_set_bool(const char *key, int val)
+{
+    WCHAR wkey[64];
+    MultiByteToWideChar(CP_UTF8, 0, key, -1, wkey, 64);
+    ConfigSetBool(wkey, val);
+}
+
+void bridge_config_set_long(const char *key, long val)
+{
+    WCHAR wkey[64];
+    MultiByteToWideChar(CP_UTF8, 0, key, -1, wkey, 64);
+    ConfigSetLong(wkey, val);
+}
+
 void bridge_scan_processes(BridgeProcList *out)
 {
     ProcList src;
