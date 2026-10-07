@@ -607,6 +607,8 @@ static int IsDoubleClickOn(Rectangle r)
 /* 返回是否命中右键 */
 static int ProcRowInput(Rectangle rowR, const BridgeProc *p)
 {
+    if (UiInputBlocked())
+        return 0;
     if (!PtIn(rowR))
         return 0;
     if (IsDoubleClickOn(rowR)) {
@@ -666,6 +668,10 @@ static void DrawViewTree(float x, float y, float w, float h)
         if (rowY > y + h) break;
         if (i % 2 == 1)
             DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.rowAlt);
+        if ((int)p->pid == gApp.selectedPid) {
+            DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.selBg);
+            DrawRectangle((int)x, (int)rowY, 3, ROW_H, gPal.primary);
+        }
         Rectangle rowR = {x, rowY, w, ROW_H};
         Rectangle arrowZone = {x, rowY, 34 + gApp.treeDepth[i] * 18, ROW_H};
         if (PtIn(arrowZone) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) &&
@@ -728,6 +734,8 @@ static void DrawViewProject(float x, float y, float w, float h)
         }
         if (alt % 2 == 1)
             DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.rowAlt);
+        if ((int)p->pid == gApp.selectedPid)
+            DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.selBg);
         alt++;
         snprintf(cells[0], 220, "%s", p->name);
         snprintf(cells[1], 220, "%lu", (unsigned long)p->pid);

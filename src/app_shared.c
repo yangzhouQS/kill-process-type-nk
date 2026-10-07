@@ -21,6 +21,11 @@ static AppTheme sTheme = THEME_DARK;
 static double sFlashUntil = 0;
 static char sFlashBuf[256] = "";
 
+int UiInputBlocked(void)
+{
+    return gApp.modal != 0 || gApp.menuOpen;
+}
+
 void SetFlashMsg(const char *fmt, ...)
 {
     va_list ap;
@@ -53,7 +58,7 @@ void ApplyTheme(AppTheme t)
         gPal.rowAlt           = (Color){0x24,0x22,0x21,255};
         gPal.rowHover         = (Color){0x2E,0x2B,0x2A,255};
         gPal.toolbarBg        = (Color){0x1A,0x18,0x17,255};
-        gPal.selBg            = (Color){0x2C,0x3E,0x55,255};
+        gPal.selBg            = (Color){0x3A,0x55,0x78,255};
     } else {
         gPal.primary          = (Color){0x1A,0x6B,0x3C,255};
         gPal.onPrimary        = (Color){0xFF,0xFF,0xFF,255};
@@ -71,7 +76,7 @@ void ApplyTheme(AppTheme t)
         gPal.rowAlt           = (Color){0xF5,0xF0,0xEA,255};
         gPal.rowHover         = (Color){0xE8,0xE3,0xDD,255};
         gPal.toolbarBg        = (Color){0xF8,0xF3,0xEE,255};
-        gPal.selBg            = (Color){0xD3,0xE8,0xD8,255};
+        gPal.selBg            = (Color){0xBE,0xD9,0xFB,255};
     }
 }
 
@@ -122,7 +127,7 @@ void DrawRowCells(const char (*cells)[220], const Color *colors,
             tx += 34;
             avail -= 34;
         }
-        DrawTxt(Clip(cells[c], avail), tx, rowY + 11, FS_TXT, colors[c]);
+        DrawTxt(Clip(cells[c], avail), tx, rowY + 12, FS_TXT, colors[c]);
         cx += cw[c];
     }
 }
@@ -394,7 +399,7 @@ void DrawToolbar(void)
         {T_CLEAN_ORPHAN, 142, 4}, {T_ADMIN, 142, 5},
     };
     for (int i = 0; i < 5; i++) {
-        if (DrawTextButton(btns[i].label, (Rectangle){bx, by, btns[i].w, 46}, 1)) {
+        if (!UiInputBlocked() && DrawTextButton(btns[i].label, (Rectangle){bx, by, btns[i].w, 46}, 1)) {
             extern void MainToolbarAction(int id);
             MainToolbarAction(btns[i].id);
         }
@@ -405,17 +410,17 @@ void DrawToolbar(void)
     const char *themeLabel = (sTheme == THEME_DARK) ? T_THEME_LIGHT : T_THEME_DARK;
     float tw = MeasureTxt(themeLabel, FS_BTN).x + 36;
     rx -= tw;
-    if (DrawTextButton(themeLabel, (Rectangle){rx, by, tw, 46}, 1))
+    if (!UiInputBlocked() && DrawTextButton(themeLabel, (Rectangle){rx, by, tw, 46}, 1))
         ToggleTheme();
     rx -= 8;
     rx -= 108;
-    if (DrawTextButton(T_SETTINGS, (Rectangle){rx, by, 108, 46}, 1)) {
+    if (!UiInputBlocked() && DrawTextButton(T_SETTINGS, (Rectangle){rx, by, 108, 46}, 1)) {
         gApp.modal = 1;
         SettingsLoad();
     }
     rx -= 8;
     rx -= 142;
-    if (DrawTextButton(T_AI_CHAT, (Rectangle){rx, by, 142, 46}, 1)) {
+    if (!UiInputBlocked() && DrawTextButton(T_AI_CHAT, (Rectangle){rx, by, 142, 46}, 1)) {
         gApp.modal = 2;
         gApp.aiMode = 0;
     }
@@ -442,7 +447,7 @@ void DrawTabBar(void)
             float tw = MeasureTxt(labels[i], FS_BTN).x + 48;
             Rectangle tr = {cx, y + 4, tw, 32};
             int sel = (gApp.curTab == i);
-            if (PointInRect(tr) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+            if (PointInRect(tr) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !UiInputBlocked()) {
                 gApp.curTab = i;
                 if (i == TAB_LOGS) {
                     extern void RefreshLogs(void);
@@ -509,7 +514,9 @@ void DrawTableHeader(float x, float y, float w, const char **cols,
         static int dragCol = -1;
         static float dragX = 0, dragW = 0;
         Vector2 m = GetMousePosition();
-        if (dragCol >= 0) {
+        if (UiInputBlocked()) {
+            dragCol = -1;
+        } else if (dragCol >= 0) {
             if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
                 float nw = dragW + (m.x - dragX);
                 if (nw < 56) nw = 56;
@@ -560,6 +567,7 @@ void DrawTableHeader(float x, float y, float w, const char **cols,
                     gPal.onSurfaceVariant);
         }
         if (PointInRect(hr) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && sortCol
+            && !UiInputBlocked()
             && !PointInRect((Rectangle){cx + cw[i] - 16, y, 16, 44})) {
             if (*sortCol == i) *sortDesc = !*sortDesc;
             else { *sortCol = i; *sortDesc = 0; }
@@ -575,7 +583,7 @@ int BeginList(float x, float y, float w, float h, float contentRows, float *scro
     float contentH = contentRows * (float)ROW_H;
     float maxOff = contentH > viewH ? contentH - viewH : 0.0f;
     Rectangle listR = {x, y, w, h};
-    if (PointInRect(listR)) {
+    if (PointInRect(listR) && !UiInputBlocked()) {
         float mw = GetMouseWheelMove();
         if (mw != 0) {
             *scroll -= mw * 60.0f;
@@ -583,7 +591,7 @@ int BeginList(float x, float y, float w, float h, float contentRows, float *scro
             if (*scroll > maxOff) *scroll = maxOff;
         }
     }
-    BeginScissorMode((int)x, (int)(y + 44), (int)w, (int)viewH);
+    BeginScissorMode((int)x, (int)(y + 43), (int)w, (int)viewH + 1);
     return (int)(y + 30 - *scroll);
 }
 

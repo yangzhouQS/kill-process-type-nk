@@ -35,6 +35,7 @@ extern Font gFont;
 void LoadAppFont(void);
 void DrawTxt(const char *text, float x, float y, float size, Color c);
 const char *Clip(const char *s, float maxW); /* 超宽截断（…结尾） */
+int UiInputBlocked(void); /* modal/菜单打开时底层交互禁用 */
 void DrawRowCells(const char (*cells)[220], const Color *colors,
                     const float *cw, int ncols,
                     float x, float rowY, int withIcon);

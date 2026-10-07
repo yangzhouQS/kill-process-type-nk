@@ -352,10 +352,12 @@ int main(int argc, char **argv)
 
         float listY = 214;
         float listH = (float)GetScreenHeight() - listY - 36;
-        DrawCurrentView(8, listY, (float)GetScreenWidth() - 16, listH);
+        if (gApp.modal == 0)
+            DrawCurrentView(8, listY, (float)GetScreenWidth() - 16, listH);
 
         DrawStatusBar();
-        DrawContextMenu();
+        if (gApp.modal == 0)
+            DrawContextMenu();
 
         if (gApp.modal == 1)
             DrawSettingsModal();
