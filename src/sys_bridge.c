@@ -270,3 +270,26 @@ void SysExeDir(char *out, int cap)
     if (slash) *slash = 0;
     WideCharToMultiByte(CP_UTF8, 0, exe, -1, out, cap, NULL, NULL);
 }
+
+
+int SysDownloadsDir(char *out, int cap)
+{
+    PWSTR w = NULL;
+    if (FAILED(SHGetKnownFolderPath(FOLDERID_Downloads, 0, NULL, &w)))
+        return 1;
+    int n = WideCharToMultiByte(CP_UTF8, 0, w, -1, out, cap, NULL, NULL);
+    CoTaskMemFree(w);
+    if (n <= 0 || n > cap) return 1;
+    /* 去掉结尾反斜杠（若有） */
+    if (n >= 2 && out[n - 2] == '\\')
+        out[n - 2] = 0;
+    return 0;
+}
+
+void SysTimestamp(char *out, int cap)
+{
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    snprintf(out, cap, "%04d-%02d-%02d_%02d%02d%02d",
+             st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+}

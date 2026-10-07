@@ -19,6 +19,8 @@ int SysRelaunch(const char *path, const char *cmdline); /* 杀后原参数拉起
 void SysClampWindowRect(int *x, int *y, int *w, int *h); /* 防呆：限制到虚拟屏幕内 */
 int SysRestartElevated(void); /* 以管理员权限重启自身（成功不返回） */
 void SysExeDir(char *out, int cap);          /* exe 所在目录（含尾反斜杠） */
+int SysDownloadsDir(char *out, int cap);     /* 系统下载目录；0=成功 */
+void SysTimestamp(char *out, int cap);       /* YYYY-MM-DD_HHmmss 本地时间戳 */
 typedef struct {
     unsigned long pid;
     char title[128];      /* 主窗口标题（无窗口为空） */

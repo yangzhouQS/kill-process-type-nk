@@ -1373,9 +1373,16 @@ void BaselineCompare(void)
 void ExportProcessesCsv(void)
 {
     char dir[400];
-    SysExeDir(dir, sizeof(dir));
+    if (SysDownloadsDir(dir, sizeof(dir)) != 0)
+        SysExeDir(dir, sizeof(dir)); /* 下载目录不可用时回退 exe 目录 */
+
+    /* 时间戳：YYYY-MM-DD_HHmmss */
+    char stamp[40];
+    SysTimestamp(stamp, sizeof(stamp));
+    char fname[64];
+    snprintf(fname, sizeof(fname), "processes_%s.csv", stamp);
     char path[600];
-    snprintf(path, sizeof(path), "%s\\processes_export.csv", dir);
+    snprintf(path, sizeof(path), "%s\\%s", dir, fname);
 
     FILE *f = fopen(path, "wb");
     if (!f) {
