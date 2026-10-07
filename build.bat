@@ -1,5 +1,7 @@
 @echo off
 rem build.bat - kill-process-type-nk (raylib 2D UI + tray + AI bridge)
+rem ??: build.bat          ??
+rem       build.bat dist    ?? + ?? dist\kill-process-type-nk.zip
 setlocal
 if not exist build mkdir build
 
@@ -37,7 +39,28 @@ set OBJS=%OBJS% build\kp_config.o build\kp_klog.o build\kp_process.o build\kp_ne
 gcc -o build\app.exe %OBJS% -lopengl32 -lgdi32 -lwinmm -lws2_32 -lshell32 -ladvapi32 -lwininet -lpsapi -liphlpapi -lcomdlg32 || goto :err
 
 echo BUILD OK: build\app.exe
+
+if "%1"=="dist" goto :dist
 exit /b 0
+
+:dist
+if exist dist rmdir /s /q dist
+mkdir dist\assets\fonts
+copy /y build\app.exe dist\app.exe
+copy /y assets\icon.png dist\assets\
+copy /y assets\icon.ico dist\assets\
+copy /y assets\fonts\msyh.ttf dist\assets\fonts\
+(
+echo kill-process-type-nk - Node/Python ?????
+echo.
+echo ?? app.exe ???????????????
+echo CLI: app.exe /list ^| /ports ^| /kill pid... ^| /ai scan
+echo ?? assets ???????????/????
+) > dist\????.txt
+powershell -NoProfile -Command "Compress-Archive -Path dist\* -DestinationPath dist\kill-process-type-nk.zip -Force"
+echo DIST OK: dist\kill-process-type-nk.zip
+exit /b 0
+
 :err
 echo BUILD FAILED
 exit /b 1

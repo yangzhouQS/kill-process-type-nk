@@ -25,10 +25,11 @@ static BOOL FindKilo(char *out, int cap)
         return TRUE;
     }
     static const char *cands[] = {
-        "H:\\2026code\\2028-amis\\zcode-demo\\kilo-windows-x64-v7.6.2\\kilo.exe",
         "D:\\kilo\\kilo-windows-x64\\kilo.exe",
+        "D:\\kilo\\kilo-windows-x64-v7.7.7\\kilo.exe",
+        "H:\\2026code\\2028-amis\\zcode-demo\\kilo-windows-x64-v7.6.2\\kilo.exe",
     };
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 3; i++) {
         if (GetFileAttributesA(cands[i]) != INVALID_FILE_ATTRIBUTES) {
             snprintf(out, cap, "%s", cands[i]);
             return TRUE;
@@ -53,6 +54,8 @@ static DWORD WINAPI AiWorker(LPVOID arg)
 {
     char *prompt = (char *)arg;
     char kilo[MAX_PATH];
+    WCHAR kiloW[MAX_PATH * 2];
+    WCHAR cmdW[32768];
     char cmd[32768];
     char *out = NULL;
     size_t outCap = 0, outLen = 0;
@@ -66,41 +69,67 @@ static DWORD WINAPI AiWorker(LPVOID arg)
         return 0;
     }
 
-    /* 命令行转义：外层引号，内部 " -> \" */
-    const char *s = prompt;
-    char *w = cmd;
-    w += snprintf(w, 64, "\"%s\" run \"", kilo);
-    for (; *s && w - cmd < 32000; s++) {
-        if (*s == '"')
-            *w++ = '\\';
-        *w++ = *s;
+    /* 净化：换行/回车/制表 -> 空格（命令行参数不能含换行） */
+    {
+        char clean[16384];
+        size_t ci = 0;
+        for (const char *q = prompt; *q && ci < sizeof(clean) - 1; q++)
+            clean[ci++] = (*q == '\n' || *q == '\r' || *q == '\t') ? ' ' : *q;
+        clean[ci] = 0;
+        /* 引号转义后拼 '"kilo路径" run "prompt"'（与 shell 传参格式一致） */
+        {
+            const char *s = clean;
+            char *w = cmd;
+            w += snprintf(w, MAX_PATH + 16, "\"%s\" run \"", kilo);
+            for (; *s && w - cmd < 32000; s++) {
+                if (*s == '"')
+                    *w++ = '\\';
+                *w++ = *s;
+            }
+            *w++ = '"';
+            *w = 0;
+        }
+        /* UTF-8 -> UTF-16：中文命令行必须宽字符（ANSI 版会按 GBK 解码成乱码） */
+        MultiByteToWideChar(CP_UTF8, 0, cmd, -1, cmdW, 32768);
+        MultiByteToWideChar(CP_UTF8, 0, kilo, -1, kiloW, MAX_PATH * 2);
     }
-    *w++ = '"';
-    *w = 0;
 
     SECURITY_ATTRIBUTES sa = {sizeof(sa), NULL, TRUE};
-    HANDLE rd = NULL, wr = NULL;
+    HANDLE rd = NULL, wr = NULL, inRd = NULL, inWr = NULL;
     if (!CreatePipe(&rd, &wr, &sa, 0))
         goto fail;
     SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
+    /* stdin：空管道（立即 EOF，避免 USESTDHANDLES 下 NULL 句柄导致启动失败） */
+    if (!CreatePipe(&inRd, &inWr, &sa, 0)) {
+        CloseHandle(rd);
+        CloseHandle(wr);
+        goto fail;
+    }
+    SetHandleInformation(inRd, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
 
-    STARTUPINFOA si;
+    STARTUPINFOW si;
     PROCESS_INFORMATION pi;
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
     si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_HIDE;
+    si.hStdInput = inRd;
     si.hStdOutput = wr;
     si.hStdError = wr;
     ZeroMemory(&pi, sizeof(pi));
 
-    if (!CreateProcessA(NULL, cmd, NULL, NULL, TRUE, CREATE_NO_WINDOW,
+    if (!CreateProcessW(NULL, cmdW, NULL, NULL, TRUE, CREATE_NO_WINDOW,
                         NULL, NULL, &si, &pi)) {
         CloseHandle(rd);
         CloseHandle(wr);
+        CloseHandle(inRd);
+        CloseHandle(inWr);
         goto fail;
     }
     CloseHandle(wr);
+    CloseHandle(inRd);
+    /* 注意：inWr 保持打开——kilo 无头仍会读 stdin，EOF 会导致其提前退出；
+     * 进程结束后统一关闭 */
 
     {
         DWORD start = GetTickCount();
@@ -146,6 +175,7 @@ static DWORD WINAPI AiWorker(LPVOID arg)
             }
         }
         CloseHandle(rd);
+        CloseHandle(inWr);
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
 
@@ -169,8 +199,12 @@ static DWORD WINAPI AiWorker(LPVOID arg)
 
 fail:
     EnterCriticalSection(&sCs);
-    sResult = _strdup("启动 kilo 失败。");
-    sState = 3;
+    {
+        char msg[160];
+        snprintf(msg, sizeof(msg), "启动 kilo 失败 (err=%lu)。", (unsigned long)GetLastError());
+        sResult = _strdup(msg);
+        sState = 3;
+    }
     LeaveCriticalSection(&sCs);
     free(prompt);
     return 0;
@@ -208,9 +242,7 @@ void AiStartChat(const char *msg)
 {
     char prompt[16384];
     snprintf(prompt, sizeof(prompt),
-             "你是Windows进程管理工具「Node/Python 进程终结者」的内置助手。"
-             "当前机器上有多个 node/python 进程。请用中文简洁回答用户问题。\n\n"
-             "用户问题：%s", msg);
+             "你是进程管理工具内置助手，用中文简洁回答。问题：%s", msg);
     AiLaunch(prompt);
 }
 
@@ -218,17 +250,11 @@ void AiStartAnalyze(const BridgeProc *p, const char *portsText)
 {
     char prompt[4096];
     snprintf(prompt, sizeof(prompt),
-             "你是Windows进程管理专家。分析以下进程并评估终止它的风险，"
-             "用中文分点简洁回答（300字内）："
-             "1)该进程是什么（服务/程序/常见用途）；"
-             "2)终止风险评级：低/中/高；"
-             "3)评级依据（系统关键性、父进程关系、未保存数据丢失、是否会自动重启、"
-             "对监听服务的影响）；4)建议操作。"
-             "进程信息：名称=%s；PID=%lu；父PID=%lu；内存=%.1fMB；类型=%s；路径=%s；"
-             "监听端口=%s。",
-             p->name, (unsigned long)p->pid, (unsigned long)p->ppid,
+             "你是Windows进程管理专家。分析以下进程终止风险，"
+             "中文分点简洁回答（300字内）：1)是什么 2)风险：低/中/高 "
+             "3)依据 4)建议。进程：%s PID=%lu 内存=%.0fMB 类型=%s 端口=%s",
+             p->name, (unsigned long)p->pid,
              (double)p->memBytes / 1048576.0, ProcTypeStr(p->type),
-             p->path[0] ? p->path : "(无法读取)",
              portsText && portsText[0] ? portsText : "无");
     AiLaunch(prompt);
 }
@@ -268,13 +294,12 @@ void AiShutdown(void)
 
 static BOOL AppendProcLine(char *buf, int cap, int *used, const BridgeProc *p)
 {
-    char line[512];
-    int n = snprintf(line, sizeof(line),
-                     "PID=%lu 名称=%s 内存=%.0fMB 路径=%s 命令行=%s\n",
+    /* 精简格式：kilo run 对长命令行参数有内部 bug（>2000 字符易触发
+     * 内部错误/路径误判），故不携带路径与命令行，且总长受限 */
+    char line[160];
+    int n = snprintf(line, sizeof(line), "%lu|%s|%.0fMB\n",
                      (unsigned long)p->pid, p->name,
-                     (double)p->memBytes / 1048576.0,
-                     p->path[0] ? p->path : "(无法读取)",
-                     p->cmdline[0] ? p->cmdline : "-");
+                     (double)p->memBytes / 1048576.0);
     if (*used + n >= cap) return FALSE;
     strcat(buf + *used, line);
     *used += n;
@@ -290,14 +315,18 @@ void AiStartRiskScan(const BridgeProcList *pl)
         "[{\"pid\":123,\"risk\":2}]\n"
         "risk: 1=低 2=中 3=高。进程列表：\n");
     int count = 0;
-    for (size_t i = 0; i < pl->count && used < (int)sizeof(buf) - 600; i++) {
+    int total = 0;
+    for (size_t i = 0; i < pl->count; i++)
+        if (pl->items[i].type != 0) total++;
+    for (size_t i = 0; i < pl->count && used < 700 && count < 18; i++) {
         if (pl->items[i].type == 0) continue;
         AppendProcLine(buf, sizeof(buf), &used, &pl->items[i]);
         count++;
     }
-    if (count == 0) {
+    if (total > count)
+        used += snprintf(buf + used, sizeof(buf) - used, "（其余 %d 个略）\n", total - count);
+    if (count == 0)
         used += snprintf(buf + used, sizeof(buf) - used, "(无 Node/Python 进程)\n");
-    }
     AiLaunch(buf);
 }
 
@@ -307,12 +336,20 @@ void AiStartLogReview(const BridgeLogList *logs)
     int used = snprintf(buf, sizeof(buf),
         "你是Windows进程管理专家。以下是进程终止操作日志（时间|来源|进程名|PID|结果|路径）。"
         "请用中文复盘：1)成功率与失败原因归类；2)可疑或高频被杀对象；3)操作建议（300字内）。\n日志：\n");
-    for (size_t i = 0; i < logs->count && used < (int)sizeof(buf) - 400; i++) {
-        const BridgeLog *l = &logs->items[i];
-        used += snprintf(buf + used, sizeof(buf) - used, "%s|%s|%s|%lu|%s|%s\n",
-                         l->timeText, l->source, l->name,
-                         (unsigned long)l->pid, l->ok ? "OK" : "FAIL",
-                         l->path[0] ? l->path : "-");
+    {
+        size_t shown = 0;
+        for (size_t i = 0; i < logs->count; i++) {
+            const BridgeLog *l = &logs->items[i];
+            if (used >= 700 || shown >= 18) {
+                used += snprintf(buf + used, sizeof(buf) - used,
+                                 "（其余 %d 条略）\n", (int)(logs->count - shown));
+                break;
+            }
+            used += snprintf(buf + used, sizeof(buf) - used, "%s|%s|PID%lu|%s\n",
+                             l->timeText, l->name, (unsigned long)l->pid,
+                             l->ok ? "OK" : "FAIL");
+            shown++;
+        }
     }
     AiLaunch(buf);
 }
@@ -339,7 +376,8 @@ void AiStartDiag(const BridgeProcList *pl)
         }
         if (best == pl->count) break;
         usedFlag[best] = 1;
-        AppendProcLine(buf, sizeof(buf), &used, &pl->items[best]);
+        if (used < 700)
+            AppendProcLine(buf, sizeof(buf), &used, &pl->items[best]);
         taken++;
     }
     AiLaunch(buf);
@@ -353,14 +391,13 @@ void AiStartCleanStrategy(const BridgeProcList *pl)
         "请先输出JSON数组[{\"pid\":123,\"reason\":\"...\"}]列出可安全终止项，"
         "再用中文说明需保留项及原因（300字内）。\n进程：\n");
     int count = 0;
-    for (size_t i = 0; i < pl->count && used < (int)sizeof(buf) - 600; i++) {
+    for (size_t i = 0; i < pl->count && used < 700 && count < 18; i++) {
         if (pl->items[i].type == 0) continue;
         AppendProcLine(buf, sizeof(buf), &used, &pl->items[i]);
         count++;
     }
-    if (count == 0) {
+    if (count == 0)
         used += snprintf(buf + used, sizeof(buf) - used, "(无 Node/Python 进程)\n");
-    }
     AiLaunch(buf);
 }
 

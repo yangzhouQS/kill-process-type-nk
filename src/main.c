@@ -14,19 +14,42 @@
 #include "ai_bridge.h"
 #include "sys_bridge.h"
 
+static int sRefreshPending = 0;
+
 static void RefreshData(void)
 {
-    bridge_free_processes(&gApp.procs);
-    bridge_free_ports(&gApp.ports);
-    bridge_scan_processes(&gApp.procs);
-    bridge_scan_ports(&gApp.ports);
+    /* 异步：后台线程扫描，完成后由主循环 poll 交付（避免卡帧） */
+    if (bridge_scan_async_start())
+        sRefreshPending = 1;
     gApp.lastRefresh = GetTime();
+}
+
+static void RefreshPoll(void)
+{
+    if (!sRefreshPending)
+        return;
+    BridgeProcList procs;
+    BridgePortList ports;
+    if (bridge_scan_async_poll(&procs, &ports)) {
+        bridge_free_processes(&gApp.procs);
+        bridge_free_ports(&gApp.ports);
+        gApp.procs = procs;
+        gApp.ports = ports;
+        sRefreshPending = 0;
+        RebuildViews();
+        bridge_monitor_sync(&gApp.procs);
+    }
 }
 
 void MainUiRefresh(void)
 {
     RefreshData();
     RebuildViews();
+    /* 日志页签时同步刷新日志 */
+    if (gApp.curTab == TAB_LOGS) {
+        bridge_free_logs(&gApp.logs);
+        bridge_load_logs(&gApp.logs);
+    }
 }
 
 static void NotifyBalloon(const char *text)
@@ -147,6 +170,27 @@ static int RunCli(int argc, char **argv)
         bridge_free_reserved(&rl);
         return 0;
     }
+    if (strcmp(argv[1], "/ai") == 0 && argc >= 3 && strcmp(argv[2], "scan") == 0) {
+        bridge_init();
+        BridgeProcList pl;
+        bridge_scan_processes(&pl);
+        AiStartRiskScan(&pl);
+        {
+            int waited = 0;
+            while (AiPoll() == 1 && waited < 300) {
+                Sleep(1000);
+                waited++;
+            }
+            if (AiPoll() == 2) {
+                printf("%s\n", AiGetResult());
+                AiConsumeResult();
+            } else {
+                fprintf(stderr, "ai scan failed: [%s] state=%d\n", AiGetResult(), AiPoll());
+            }
+        }
+        bridge_free_processes(&pl);
+        return 0;
+    }
     if (strcmp(argv[1], "/kill") == 0 && argc >= 3) {
         bridge_init();
         int ok = 0;
@@ -210,6 +254,7 @@ int main(int argc, char **argv)
     gApp.orphanNodePyOnly = bridge_config_bool("OrphanNodePyOnly", 1);
     gApp.anomalyWatch = bridge_config_bool("AnomalyWatch", 0);
     gApp.balloonNotify = bridge_config_bool("BalloonNotify", 1);
+    gApp.anomalyMemMB = (int)bridge_config_long("AnomalyMemMB", 10);
 
     ViewsInit();
     RefreshData();
@@ -315,7 +360,8 @@ int main(int argc, char **argv)
                 BridgeProc *p = &gApp.procs.items[i];
                 unsigned long long growth = 0;
                 if (p->type == 0) continue;
-                if (bridge_monitor_mem_growth(p->pid, &growth)) {
+                if (bridge_monitor_mem_growth(p->pid, &growth) &&
+                    growth >= (unsigned long long)gApp.anomalyMemMB) {
                     char msg[192];
                     snprintf(msg, sizeof(msg), T_ANOMALY_FMT, p->name,
                              (unsigned long)p->pid, (unsigned long)growth);
@@ -345,6 +391,7 @@ int main(int argc, char **argv)
             free(pids);
         }
 
+        RefreshPoll();
         DrawAiJobPoll();
 
         BeginDrawing();

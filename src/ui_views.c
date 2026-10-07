@@ -27,6 +27,8 @@ static PortRow *sPortRows = NULL;
 static int sPortRowCount = 0, sPortRowCap = 0;
 
 static int sortAllCol = 0, sortAllDesc = 0;
+static int sortPortCol = 0, sortPortDesc = 0;
+static int sortLogCol = 0, sortLogDesc = 0;
 static int selPortRow = -1;
 
 /* 排序状态存在 AppState 外部即可（每视图独立） */
@@ -78,11 +80,40 @@ static int NameMatch(const BridgeProc *p)
     return strstr(hay, needle) != NULL;
 }
 
+/* pid -> index 哈希（开放寻址），RebuildViews 时重建 */
+#define PIDHASH_SIZE 2048
+static int sPidHash[PIDHASH_SIZE];
+static int sPidHashInit = 0;
+
+static unsigned PidHashSlot(unsigned long pid)
+{
+    return (unsigned)((pid * 2654435761u) & (PIDHASH_SIZE - 1));
+}
+
+static void PidHashRebuild(void)
+{
+    for (int i = 0; i < PIDHASH_SIZE; i++)
+        sPidHash[i] = -1;
+    for (size_t i = 0; i < gApp.procs.count; i++) {
+        unsigned h = PidHashSlot(gApp.procs.items[i].pid);
+        while (sPidHash[h] >= 0)
+            h = (h + 1) & (PIDHASH_SIZE - 1);
+        sPidHash[h] = (int)i;
+    }
+    sPidHashInit = 1;
+}
+
 static BridgeProc *FindPid(unsigned long pid)
 {
-    for (size_t i = 0; i < gApp.procs.count; i++)
-        if (gApp.procs.items[i].pid == pid)
-            return &gApp.procs.items[i];
+    if (!sPidHashInit)
+        PidHashRebuild();
+    unsigned h = PidHashSlot(pid);
+    while (sPidHash[h] >= 0) {
+        BridgeProc *p = &gApp.procs.items[sPidHash[h]];
+        if (p->pid == pid)
+            return p;
+        h = (h + 1) & (PIDHASH_SIZE - 1);
+    }
     return NULL;
 }
 
@@ -105,14 +136,50 @@ static int CmpProcName(const void *a, const void *b)
     return strcmp(((const BridgeProc *)a)->name, ((const BridgeProc *)b)->name);
 }
 
+static int CmpProcPath(const void *a, const void *b)
+{
+    return strcmp(((const BridgeProc *)a)->path, ((const BridgeProc *)b)->path);
+}
+
+static int CmpProcCmd(const void *a, const void *b)
+{
+    return strcmp(((const BridgeProc *)a)->cmdline, ((const BridgeProc *)b)->cmdline);
+}
+
+static int CmpProcType(const void *a, const void *b)
+{
+    return (int)((const BridgeProc *)a)->type - (int)((const BridgeProc *)b)->type;
+}
+
+static int CmpProcCpu(const void *a, const void *b)
+{
+    float x = ((const BridgeProc *)a)->cpuPct, y = ((const BridgeProc *)b)->cpuPct;
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    return (x < y) ? -1 : (x > y) ? 1 : 0;
+}
+
+static int CmpProcRisk(const void *a, const void *b)
+{
+    return (int)((const BridgeProc *)a)->aiRisk - (int)((const BridgeProc *)b)->aiRisk;
+}
+
 static void SortFiltered(int col, int desc)
 {
     int (*cmp)(const void *, const void *) = CmpProcMem;
-    if (col == 1 || col == 2) cmp = CmpProcPid;
-    else if (col == 0) cmp = CmpProcName;
+    int reverse = 0;
+    switch (col) {
+    case 0: cmp = CmpProcName; reverse = 1; break;
+    case 1: case 2: cmp = CmpProcPid; reverse = 1; break;
+    case 4: cmp = CmpProcCpu; break;                /* CPU% 降序即默认 */
+    case 5: cmp = CmpProcType; reverse = 1; break;
+    case 6: cmp = CmpProcPath; reverse = 1; break;
+    case 7: cmp = CmpProcCmd; reverse = 1; break;
+    case 8: cmp = CmpProcRisk; break;               /* 风险高在前 */
+    default: break;                                  /* 3=内存 默认降序 */
+    }
     qsort(sFiltered, (size_t)sFilteredCount, sizeof(BridgeProc), cmp);
-    if (desc && cmp == CmpProcName) {
-        /* 名称降序反转 */
+    if (desc && reverse) {
         for (int i = 0, j = sFilteredCount - 1; i < j; i++, j--) {
             BridgeProc t = sFiltered[i];
             sFiltered[i] = sFiltered[j];
@@ -187,15 +254,28 @@ static void RebuildTree(void)
         sNodes[i].idx = i;
         sNodes[i].firstChild = -1;
     }
-    /* pid -> node 索引（线性查，进程几百个可接受） */
+    /* pid -> index 哈希（复用 sPidHash 思路，局部表） */
     int *parent = (int *)malloc((size_t)n * sizeof(int));
-    for (int i = 0; i < n; i++) {
-        BridgeProc *p = &sFiltered[i];
-        parent[i] = -1;
-        for (int j = 0; j < n; j++) {
-            if (j != i && sFiltered[j].pid == p->ppid) {
-                parent[i] = j;
-                break;
+    {
+        static int idxMap[PIDHASH_SIZE];
+        for (int i = 0; i < PIDHASH_SIZE; i++)
+            idxMap[i] = -1;
+        for (int i = 0; i < n; i++) {
+            unsigned h = PidHashSlot(sFiltered[i].pid);
+            while (idxMap[h] >= 0)
+                h = (h + 1) & (PIDHASH_SIZE - 1);
+            idxMap[h] = i;
+        }
+        for (int i = 0; i < n; i++) {
+            parent[i] = -1;
+            unsigned h = PidHashSlot(sFiltered[i].ppid);
+            while (idxMap[h] >= 0) {
+                int j = idxMap[h];
+                if (j != i && sFiltered[j].pid == sFiltered[i].ppid) {
+                    parent[i] = j;
+                    break;
+                }
+                h = (h + 1) & (PIDHASH_SIZE - 1);
             }
         }
     }
@@ -294,6 +374,7 @@ static void RebuildProject(void)
 
 void RebuildViews(void)
 {
+    PidHashRebuild();
     /* 1) 过滤 */
     int cap = (int)gApp.procs.count;
     if (cap > sFilteredCap) {
@@ -636,9 +717,22 @@ static void DrawViewProject(float x, float y, float w, float h)
     EndList();
 }
 
+static int CmpPortRow(const void *a, const void *b)
+{
+    const PortRow *x = a, *y = b;
+    switch (sortPortCol) {
+    case 0: return (x->port < y->port) ? -1 : (x->port > y->port) ? 1 : 0;
+    case 2: return (x->pid < y->pid) ? -1 : (x->pid > y->pid) ? 1 : 0;
+    case 3: return strcmp(x->p ? x->p->name : "", y->p ? y->p->name : "");
+    default: return 0;
+    }
+}
+
 static void DrawViewPorts(float x, float y, float w, float h)
 {
-    DrawTableHeader(x, y, w, gColsPort, gCwPort, 7, NULL, NULL);
+    DrawTableHeader(x, y, w, gColsPort, gCwPort, 7, &sortPortCol, &sortPortDesc);
+    /* 排序快照（每次进入按当前排序状态重排行序） */
+    qsort(sPortRows, (size_t)sPortRowCount, sizeof(PortRow), CmpPortRow);
     int baseY = BeginList(x, y, w, h, (float)sPortRowCount, &gApp.scrollPort);
     char cells[7][220];
     Color colors[7];
@@ -696,9 +790,21 @@ void RefreshLogs(void)
     bridge_load_logs(&gApp.logs);
 }
 
+static int CmpLogRow(const void *a, const void *b)
+{
+    const BridgeLog *x = a, *y = b;
+    switch (sortLogCol) {
+    case 0: return strcmp(x->timeText, y->timeText);
+    case 2: return strcmp(x->name, y->name);
+    case 4: return x->ok - y->ok;
+    default: return 0;
+    }
+}
+
 static void DrawViewLogs(float x, float y, float w, float h)
 {
-    DrawTableHeader(x, y, w, gColsLog, gCwLog, 6, NULL, NULL);
+    DrawTableHeader(x, y, w, gColsLog, gCwLog, 6, &sortLogCol, &sortLogDesc);
+    qsort(gApp.logs.items, gApp.logs.count, sizeof(BridgeLog), CmpLogRow);
     int baseY = BeginList(x, y, w, h, (float)gApp.logs.count, &gApp.scrollLog);
     char cells[6][220];
     Color colors[6];
@@ -935,7 +1041,8 @@ void DrawContextMenu(void)
 /* ---------- 设置弹窗 ---------- */
 
 static int sSetStartMin, sSetAuto, sSetAutoSec, sSetBalloon;
-static int sSetOrphan, sSetOrphanMin, sSetOrphanNP, sSetAnomaly, sSetAutoRun, sSetTheme;
+static int sSetOrphan, sSetOrphanMin, sSetOrphanNP, sSetAnomaly, sSetAnomalyMB;
+static int sSetAutoRun, sSetTheme;
 
 void SettingsLoad(void)
 {
@@ -947,6 +1054,7 @@ void SettingsLoad(void)
     sSetOrphanMin = (int)bridge_config_long("OrphanIntervalMin", 30);
     sSetOrphanNP = bridge_config_bool("OrphanNodePyOnly", 1);
     sSetAnomaly = bridge_config_bool("AnomalyWatch", 0);
+    sSetAnomalyMB = (int)bridge_config_long("AnomalyMemMB", 10);
     sSetAutoRun = SysIsAutoRun();
     sSetTheme = (int)CurrentTheme();
 }
@@ -961,6 +1069,8 @@ void SettingsSave(void)
     bridge_config_set_long("OrphanIntervalMin", sSetOrphanMin);
     bridge_config_set_bool("OrphanNodePyOnly", sSetOrphanNP);
     bridge_config_set_bool("AnomalyWatch", sSetAnomaly);
+    bridge_config_set_long("AnomalyMemMB", sSetAnomalyMB);
+    gApp.anomalyMemMB = sSetAnomalyMB;
     if (sSetAutoRun != SysIsAutoRun())
         SysSetAutoRun(sSetAutoRun);
     if (sSetTheme != (int)CurrentTheme())
@@ -1033,8 +1143,10 @@ void DrawSettingsModal(void)
     if (DrawCheckBox(S_ORPHAN_NP, (Rectangle){x, y, rowW, 40}, sSetOrphanNP))
         sSetOrphanNP = !sSetOrphanNP;
     y += 54;
-    if (DrawCheckBox(S_ANOMALY, (Rectangle){x, y, rowW, 40}, sSetAnomaly))
+    if (DrawCheckBox(S_ANOMALY, (Rectangle){x, y, rowW - 260, 40}, sSetAnomaly))
         sSetAnomaly = !sSetAnomaly;
+    StepControl("阈值MB", (Rectangle){x + rowW - 240, y, 240, 40}, sSetAnomalyMB, 5, 2000,
+                &sSetAnomalyMB);
     y += 54;
     if (DrawCheckBox(S_AUTORUN, (Rectangle){x, y, rowW, 40}, sSetAutoRun))
         sSetAutoRun = !sSetAutoRun;

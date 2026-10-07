@@ -79,6 +79,7 @@ typedef struct {
     long orphanIntervalMin;
     int orphanNodePyOnly;
     int anomalyWatch;
+    int anomalyMemMB;   /* 异常告警内存阈值 MB */
     int autoRun;
 
     /* 弹窗 */

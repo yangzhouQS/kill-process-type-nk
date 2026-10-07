@@ -235,3 +235,67 @@ int bridge_kill_pid(uint32_t pid)
     KillPids(&p, 1, &kr, NULL);
     return kr.okCount > 0 ? 0 : -1;
 }
+
+
+/* ---------- 异步扫描（后台线程） ---------- */
+
+#ifdef _WIN32
+#include <windows.h>
+typedef HANDLE bthread_t;
+#else
+#include <pthread.h>
+typedef pthread_t bthread_t;
+#endif
+
+static volatile int sAsyncState = 0; /* 0 空闲 1 运行 2 完成 */
+static BridgeProcList sAsyncProcs;
+static BridgePortList sAsyncPorts;
+
+#ifdef _WIN32
+static DWORD WINAPI AsyncScanWorker(LPVOID arg)
+#else
+static void *AsyncScanWorker(void *arg)
+#endif
+{
+    (void)arg;
+    memset(&sAsyncProcs, 0, sizeof(sAsyncProcs));
+    memset(&sAsyncPorts, 0, sizeof(sAsyncPorts));
+    bridge_scan_processes(&sAsyncProcs);
+    bridge_scan_ports(&sAsyncPorts);
+    sAsyncState = 2;
+    return 0;
+}
+
+int bridge_scan_async_start(void)
+{
+    if (sAsyncState == 1)
+        return 0;
+    if (sAsyncState == 2) {
+        bridge_free_processes(&sAsyncProcs);
+        bridge_free_ports(&sAsyncPorts);
+        sAsyncState = 0;
+    }
+    sAsyncState = 1;
+#ifdef _WIN32
+    HANDLE th = CreateThread(NULL, 0, AsyncScanWorker, NULL, 0, NULL);
+    if (!th) { sAsyncState = 0; return 0; }
+    CloseHandle(th);
+#else
+    pthread_t th;
+    if (pthread_create(&th, NULL, AsyncScanWorker, NULL) != 0) { sAsyncState = 0; return 0; }
+    pthread_detach(th);
+#endif
+    return 1;
+}
+
+int bridge_scan_async_poll(BridgeProcList *procs, BridgePortList *ports)
+{
+    if (sAsyncState != 2)
+        return 0;
+    *procs = sAsyncProcs;
+    *ports = sAsyncPorts;
+    memset(&sAsyncProcs, 0, sizeof(sAsyncProcs));
+    memset(&sAsyncPorts, 0, sizeof(sAsyncPorts));
+    sAsyncState = 0;
+    return 1;
+}

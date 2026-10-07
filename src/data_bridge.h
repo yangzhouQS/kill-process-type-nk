@@ -61,9 +61,13 @@ typedef struct {
 /* 初始化（ConfigInit + KlogInit） */
 void bridge_init(void);
 
-/* 进程扫描 */
+/* 进程扫描（同步） */
 void bridge_scan_processes(BridgeProcList *out);
 void bridge_free_processes(BridgeProcList *l);
+
+/* 进程扫描（异步：后台线程，主循环轮询交付） */
+int bridge_scan_async_start(void);  /* 1=已启动（忙碌时返回 0） */
+int bridge_scan_async_poll(BridgeProcList *procs, BridgePortList *ports); /* 1=完成并交付所有权 */
 
 /* 端口扫描 */
 void bridge_scan_ports(BridgePortList *out);

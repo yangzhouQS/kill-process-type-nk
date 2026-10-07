@@ -575,6 +575,118 @@ void EndList(void)
     EndScissorMode();
 }
 
+
+/* ================= Markdown 富文本（AI 输出） =================
+ * 行级样式：# ## 标题放大 / - * 列表圆点 / > 引用缩进
+ * 行内样式：**加粗**（主色） `代码`（高亮+背景）
+ */
+static void DrawRichLine(const char *seg, size_t segLen, float x, float y,
+                         float maxW, float size, Color base)
+{
+    char token[512];
+    float cx = x;
+    size_t i = 0;
+
+    while (i < segLen && cx < x + maxW) {
+        if (seg[i] == '*' && i + 1 < segLen && seg[i + 1] == '*') {
+            /* **bold** */
+            size_t j = i + 2, start = j;
+            while (j < segLen && !(seg[j] == '*' && j + 1 < segLen && seg[j + 1] == '*'))
+                j++;
+            size_t n = j - start;
+            if (n > 0 && j + 1 < segLen) {
+                if (n > 511) n = 511;
+                memcpy(token, seg + start, n);
+                token[n] = 0;
+                Vector2 ts = MeasureTxt(token, size);
+                if (cx + ts.x > x + maxW) break;
+                DrawTxt(token, cx, y, size, gPal.primary);
+                cx += ts.x;
+                i = j + 2;
+                continue;
+            }
+        }
+        if (seg[i] == '`') {
+            size_t j = i + 1, start = j;
+            while (j < segLen && seg[j] != '`')
+                j++;
+            if (j > start) {
+                size_t n = j - start;
+                if (n > 511) n = 511;
+                memcpy(token, seg + start, n);
+                token[n] = 0;
+                Vector2 ts = MeasureTxt(token, size);
+                if (cx + ts.x > x + maxW) break;
+                DrawRectangleRec((Rectangle){cx - 2, y - 1, ts.x + 4, size + 4},
+                                 gPal.surfaceVariant);
+                DrawTxt(token, cx, y, size, gPal.warnC);
+                cx += ts.x;
+                i = j + 1;
+                continue;
+            }
+        }
+        /* 普通文本：到下一个样式符 */
+        size_t j = i;
+        while (j < segLen && seg[j] != '*' && seg[j] != '`')
+            j++;
+        size_t n = j - i;
+        if (n > 511) n = 511;
+        memcpy(token, seg + i, n);
+        token[n] = 0;
+        Vector2 ts = MeasureTxt(token, size);
+        if (cx + ts.x > x + maxW) {
+            /* 超宽截断本行 */
+            float avail = x + maxW - cx;
+            const char *cl = Clip(token, avail);
+            DrawTxt(cl, cx, y, size, base);
+            break;
+        }
+        DrawTxt(token, cx, y, size, base);
+        cx += ts.x;
+        i = j;
+    }
+}
+
+void DrawRich(const char *text, float x, float y, float maxW, float size,
+              Color base, float *scroll)
+{
+    (void)scroll;
+    float cy = y;
+    const char *p = text;
+    char line[2048];
+    while (*p) {
+        const char *nl = strchr(p, '\n');
+        size_t len = nl ? (size_t)(nl - p) : strlen(p);
+        if (len > 2047) len = 2047;
+        memcpy(line, p, len);
+        line[len] = 0;
+
+        if (line[0] == '#' && line[1] == '#' && line[2] == ' ') {
+            DrawRichLine(line + 3, strlen(line + 3), x, cy, maxW, size + 3, gPal.primary);
+            cy += size + 10;
+        } else if (line[0] == '#' && line[1] == ' ') {
+            DrawRichLine(line + 2, strlen(line + 2), x, cy, maxW, size + 6, gPal.primary);
+            cy += size + 14;
+        } else if ((line[0] == '-' || line[0] == '*') && line[1] == ' ') {
+            DrawCircle(x + 6, cy + size / 2, 3, gPal.primary);
+            DrawRichLine(line + 2, strlen(line + 2), x + 18, cy, maxW - 18, size, base);
+            cy += size + 5;
+        } else if (line[0] == '>') {
+            DrawRectangleRec((Rectangle){x, cy, 3, size + 2}, gPal.primary);
+            DrawRichLine(line + (line[1] == ' ' ? 2 : 1),
+                         strlen(line + (line[1] == ' ' ? 2 : 1)),
+                         x + 10, cy, maxW - 10, size, gPal.onSurfaceVariant);
+            cy += size + 5;
+        } else {
+            /* 普通段：自动换行（按富文本 token 简化为单行超宽截断+折行近似） */
+            DrawRichLine(line, strlen(line), x, cy, maxW, size, base);
+            cy += size + 5;
+        }
+        p = nl ? nl + 1 : p + len;
+        if (*p == 0) break;
+    }
+}
+
 /* ================= AI 面板 ================= */
 
 static void AiAppendOut(const char *text)
@@ -749,8 +861,8 @@ void DrawAiPanel(void)
                           &gApp.scrollAiOut);
     /* BeginList 的 maxOff 用行数近似，重置滚动后本帧 clamp 自然生效 */
     if (gApp.aiOutput && gApp.aiOutput[0])
-        DrawWrapped(gApp.aiOutput, outR.x + 8, (float)baseY + 4,
-                    outR.width - 16, 15, gPal.onSurface, &gApp.scrollAiOut);
+        DrawRich(gApp.aiOutput, outR.x + 8, (float)baseY + 4,
+                 outR.width - 16, FS_TXT, gPal.onSurface, &gApp.scrollAiOut);
     else
         DrawTxt("输入问题，或右键进程选择 AI 分析…", outR.x + 8, (float)baseY + 8,
                 15, gPal.outline);
