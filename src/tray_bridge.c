@@ -8,6 +8,7 @@
 
 #include "tray_bridge.h"
 #include "version.h"
+#include "icon_ico.h"
 #include "sys_bridge.h"
 
 #define WM_APP_TRAY (WM_APP + 1)
@@ -106,8 +107,13 @@ int tray_init(void)
     s_nid.uID = 1;
     s_nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     s_nid.uCallbackMessage = WM_APP_TRAY;
-    s_nid.hIcon = (HICON)LoadImageA(NULL, "assets\\icon.ico", IMAGE_ICON, 0, 0,
-                   LR_LOADFROMFILE);
+    /* 托盘图标：内嵌 ICO（零外部依赖），失败再试外部文件，最后系统默认 */
+    s_nid.hIcon = (HICON)CreateIconFromResourceEx((PBYTE)kIconIco_data,
+                                                  kIconIco_len, TRUE, 0x00030000,
+                                                  0, 0, LR_DEFAULTCOLOR);
+    if (!s_nid.hIcon)
+        s_nid.hIcon = (HICON)LoadImageA(NULL, "assets\\icon.ico", IMAGE_ICON, 0, 0,
+                       LR_LOADFROMFILE);
     if (!s_nid.hIcon)
         s_nid.hIcon = LoadIconW(NULL, (LPCWSTR)IDI_APPLICATION);
     lstrcpynW(s_nid.szTip, L"" APP_TITLE_W, 128);

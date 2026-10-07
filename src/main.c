@@ -14,6 +14,7 @@
 #include "ai_bridge.h"
 #include "sys_bridge.h"
 #include "version.h"
+#include "icon_png.h"
 
 static int sRefreshPending = 0;
 
@@ -167,8 +168,9 @@ int main(int argc, char **argv)
     SetWindowPosition(winX, winY);
     SetTargetFPS(60);
 
-    if (FileExists("assets/icon.png")) {
-        Image icon = LoadImage("assets/icon.png");
+    /* 窗口图标：内嵌 PNG（零外部依赖） */
+    {
+        Image icon = LoadImageFromMemory(".png", kIconPng_data, kIconPng_len);
         if (icon.data) {
             SetWindowIcon(icon);
             UnloadImage(icon);
