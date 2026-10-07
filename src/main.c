@@ -131,85 +131,10 @@ void MainToolbarAction(int id)
     }
 }
 
-/* ---------- CLI 模式（/list /ports /kill） ---------- */
-
-static int RunCli(int argc, char **argv)
-{
-    if (argc < 2) return -1;
-    if (strcmp(argv[1], "/list") == 0) {
-        bridge_init();
-        BridgeProcList pl;
-        bridge_scan_processes(&pl);
-        printf("%-8s %-8s %-10s %-12s %s\n", "PID", "PPID", "MEM(MB)", "TYPE", "NAME");
-        for (size_t i = 0; i < pl.count; i++) {
-            printf("%-8lu %-8lu %-10.1f %-12s %s\n",
-                   (unsigned long)pl.items[i].pid,
-                   (unsigned long)pl.items[i].ppid,
-                   (double)pl.items[i].memBytes / 1048576.0,
-                   pl.items[i].type == 1 ? "node" :
-                   pl.items[i].type == 2 ? "python" : "-",
-                   pl.items[i].name);
-        }
-        bridge_free_processes(&pl);
-        return 0;
-    }
-    if (strcmp(argv[1], "/ports") == 0) {
-        bridge_init();
-        BridgePortList nl;
-        bridge_scan_ports(&nl);
-        printf("%-8s %-6s %s\n", "PORT", "PROTO", "PID");
-        for (size_t i = 0; i < nl.count; i++)
-            printf("%-8lu %-6s %lu\n", (unsigned long)nl.items[i].port,
-                   nl.items[i].tcp ? "TCP" : "UDP", (unsigned long)nl.items[i].pid);
-        bridge_free_ports(&nl);
-        BridgeRangeList rl;
-        bridge_scan_reserved(&rl);
-        printf("\nreserved ranges: %lu\n", (unsigned long)rl.count);
-        for (size_t i = 0; i < rl.count; i++)
-            printf("  %u-%u (%s)\n", rl.items[i].start, rl.items[i].end,
-                   rl.items[i].tcp ? "TCP" : "UDP");
-        bridge_free_reserved(&rl);
-        return 0;
-    }
-    if (strcmp(argv[1], "/ai") == 0 && argc >= 3 && strcmp(argv[2], "scan") == 0) {
-        bridge_init();
-        BridgeProcList pl;
-        bridge_scan_processes(&pl);
-        AiStartRiskScan(&pl);
-        {
-            int waited = 0;
-            while (AiPoll() == 1 && waited < 300) {
-                Sleep(1000);
-                waited++;
-            }
-            if (AiPoll() == 2) {
-                printf("%s\n", AiGetResult());
-                AiConsumeResult();
-            } else {
-                fprintf(stderr, "ai scan failed: [%s] state=%d\n", AiGetResult(), AiPoll());
-            }
-        }
-        bridge_free_processes(&pl);
-        return 0;
-    }
-    if (strcmp(argv[1], "/kill") == 0 && argc >= 3) {
-        bridge_init();
-        int ok = 0;
-        for (int i = 2; i < argc; i++) {
-            unsigned long pid = strtoul(argv[i], NULL, 10);
-            if (bridge_kill_pid((unsigned int)pid) == 0) {
-                printf("killed %lu\n", pid);
-                ok++;
-            } else {
-                printf("failed %lu\n", pid);
-            }
-        }
-        return ok == argc - 2 ? 0 : 1;
-    }
-    return -1;
-}
 
 /* ---------- 主程序 ---------- */
+
+extern int CliRun(int argc, char **argv); /* cli.c */
 
 int main(int argc, char **argv)
 {
@@ -220,7 +145,7 @@ int main(int argc, char **argv)
     }
 
     {
-        int cr = RunCli(argc, argv);
+        int cr = CliRun(argc, argv);
         if (cr >= 0) return cr;
     }
 
