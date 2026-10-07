@@ -1372,9 +1372,14 @@ void BaselineCompare(void)
 }
 void ExportProcessesCsv(void)
 {
-    FILE *f = fopen("processes_export.csv", "wb");
+    char dir[400];
+    SysExeDir(dir, sizeof(dir));
+    char path[600];
+    snprintf(path, sizeof(path), "%s\\processes_export.csv", dir);
+
+    FILE *f = fopen(path, "wb");
     if (!f) {
-        SetFlashMsg("CSV 导出失败（无法写入文件）");
+        SetFlashMsg("CSV 导出失败：%s", path);
         return;
     }
     /* UTF-8 BOM（Excel 兼容） */
@@ -1400,5 +1405,12 @@ void ExportProcessesCsv(void)
                 ProcTypeName(p->type), p->aiRisk, pathEsc, cmdEsc, projEsc);
     }
     fclose(f);
-    SetFlashMsg("已导出 processes_export.csv（程序目录）");
+
+    char msg[700];
+    snprintf(msg, sizeof(msg), "已导出 %d 个进程到 %s",
+             (int)gApp.procs.count, path);
+    SetFlashMsg("%s", msg);
+    if (gApp.balloonNotify)
+        tray_notify("导出 CSV", msg);
+    SysShowInExplorer(path);
 }

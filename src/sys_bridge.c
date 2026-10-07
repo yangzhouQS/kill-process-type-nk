@@ -257,3 +257,16 @@ int SysQueryProcDetail(unsigned long pid, unsigned long ppid, SysProcDetail *out
                         sizeof(out->title), NULL, NULL);
     return 0;
 }
+
+
+void SysExeDir(char *out, int cap)
+{
+    WCHAR exe[MAX_PATH];
+    if (!GetModuleFileNameW(NULL, exe, MAX_PATH)) {
+        if (cap > 0) out[0] = 0;
+        return;
+    }
+    WCHAR *slash = wcsrchr(exe, L'\\');
+    if (slash) *slash = 0;
+    WideCharToMultiByte(CP_UTF8, 0, exe, -1, out, cap, NULL, NULL);
+}
