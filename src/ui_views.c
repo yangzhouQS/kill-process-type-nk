@@ -930,83 +930,86 @@ void DrawContextMenu(void)
 {
     static double sMenuOpenedAt = 0;
     if (!gApp.menuOpen) { sMenuOpenedAt = 0; return; }
-    if (sMenuOpenedAt == 0) {
-        sMenuOpenedAt = GetTime();
-        MenuLog("[menu] first draw at %.2f\n", sMenuOpenedAt);
-    }
-    float W = (float)GetScreenWidth(), H = (float)GetScreenHeight();
-    /* 遮罩关闭（打开后短暂保护，避免同帧关闭） */
-    if (GetTime() - sMenuOpenedAt > 0.25 &&
-        (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) || IsMouseButtonPressed(MOUSE_RIGHT_BUTTON))) {
-        gApp.menuOpen = 0;
-        sMenuOpenedAt = 0;
-        return;
-    }
 
     int itemCount = gApp.menuKind == 0 ? 9 : 3;
     float mw = 460;
     float mh = itemCount * 44 + 22;
     float mx = gApp.menuPos.x, my = gApp.menuPos.y;
+    float W = (float)GetScreenWidth(), H = (float)GetScreenHeight();
     if (mx + mw > W - 8) mx = W - 8 - mw;
     if (my + mh > H - 40) my = H - 40 - mh;
-
     Rectangle panel = {mx, my, mw, mh};
-    /* 阴影 + 高对比容器（深色主题下与背景区分） */
+
+    /* 首帧记录打开时间；保护期后点击面板外才关闭（面板内点击交给菜单项处理） */
+    if (sMenuOpenedAt == 0)
+        sMenuOpenedAt = GetTime();
+    int clickOutside = (GetTime() - sMenuOpenedAt > 0.25) &&
+                       (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) ||
+                        IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) &&
+                       !PtIn(panel);
+    if (clickOutside) {
+        gApp.menuOpen = 0;
+        sMenuOpenedAt = 0;
+        return;
+    }
+
+    /* 阴影 + 高对比容器 */
     DrawRectangleRounded((Rectangle){mx + 5, my + 6, mw, mh}, 0.05f, 8,
                          (Color){0, 0, 0, 100});
-    Color menuBg = gPal.cardBg;
-    if (CurrentTheme() == THEME_DARK)
-        menuBg = (Color){0x33, 0x30, 0x2E, 255};
-    else
-        menuBg = (Color){0xFF, 0xFF, 0xFF, 255};
+    Color menuBg = (CurrentTheme() == THEME_DARK) ? (Color){0x33, 0x30, 0x2E, 255}
+                                                  : (Color){0xFF, 0xFF, 0xFF, 255};
     DrawRectangleRounded(panel, 0.05f, 8, menuBg);
     DrawRectangleRoundedLines(panel, 0.05f, 8, gPal.primary);
 
     float y = my + 12;
     Rectangle mr;
+
     if (gApp.menuKind == 0) {
         if (MenuItem(M_DETAIL, &mr, mx, &y, mw)) {
             extern void OpenProcDetail(unsigned long pid);
             OpenProcDetail((unsigned long)gApp.selectedPid);
             gApp.menuOpen = 0;
+            sMenuOpenedAt = 0;
             return;
         }
         if (MenuItem(M_EXPORT_CSV, &mr, mx, &y, mw)) {
             ExportProcessesCsv();
             gApp.menuOpen = 0;
+            sMenuOpenedAt = 0;
             return;
         }
         if (MenuItem(M_KILL, &mr, mx, &y, mw)) {
             if (gApp.selectedPid > 0) {
                 bridge_kill_pid((unsigned int)gApp.selectedPid);
-                extern void MainUiRefresh(void);
                 MainUiRefresh();
                 SetFlashMsg(N_KILLED_SEL);
             }
             gApp.menuOpen = 0;
+            sMenuOpenedAt = 0;
             return;
         }
         if (MenuItem(M_SMARTRE, &mr, mx, &y, mw)) {
             BridgeProc *p = FindPid((unsigned long)gApp.selectedPid);
             if (p && p->path[0]) {
-                char path[300], cmd[300];
-                snprintf(path, sizeof(path), "%s", p->path);
-                snprintf(cmd, sizeof(cmd), "\"%s\" %s", p->path, p->cmdline);
+                char wpath[300], wcmd[600];
+                snprintf(wpath, sizeof(wpath), "%s", p->path);
+                /* cmdline 首个 token 即 exe 路径，原样作为命令行（CreateProcess 会跳过首 token） */
+                snprintf(wcmd, sizeof(wcmd), "%s", p->cmdline[0] ? p->cmdline : p->path);
                 bridge_kill_pid(p->pid);
-                if (SysRelaunch(path, cmd) == 0)
+                Sleep(300);
+                if (SysRelaunch(wpath, wcmd) == 0)
                     SetFlashMsg("已智能重启 %s", p->name);
                 else
                     SetFlashMsg("智能重启失败");
-                extern void MainUiRefresh(void);
                 MainUiRefresh();
             }
             gApp.menuOpen = 0;
+            sMenuOpenedAt = 0;
             return;
         }
         if (MenuItem(M_AI_ANALY, &mr, mx, &y, mw)) {
             BridgeProc *p = FindPid((unsigned long)gApp.selectedPid);
             if (p && AiAvailable()) {
-                /* 该进程监听端口串 */
                 char ports[256];
                 int n = 0;
                 ports[0] = 0;
@@ -1027,6 +1030,7 @@ void DrawContextMenu(void)
                 SetFlashMsg(A_NOKILO);
             }
             gApp.menuOpen = 0;
+            sMenuOpenedAt = 0;
             return;
         }
         if (MenuItem(M_COPY_PATH, &mr, mx, &y, mw)) {
@@ -1034,6 +1038,7 @@ void DrawContextMenu(void)
             if (p) SetClipboardText(p->path[0] ? p->path : "");
             SetFlashMsg(N_COPIED);
             gApp.menuOpen = 0;
+            sMenuOpenedAt = 0;
             return;
         }
         if (MenuItem(M_COPY_CMD, &mr, mx, &y, mw)) {
@@ -1041,12 +1046,14 @@ void DrawContextMenu(void)
             if (p) SetClipboardText(p->cmdline[0] ? p->cmdline : "");
             SetFlashMsg(N_COPIED);
             gApp.menuOpen = 0;
+            sMenuOpenedAt = 0;
             return;
         }
         if (MenuItem(M_EXPLORER, &mr, mx, &y, mw)) {
             BridgeProc *p = FindPid((unsigned long)gApp.selectedPid);
             if (p && p->path[0]) SysShowInExplorer(p->path);
             gApp.menuOpen = 0;
+            sMenuOpenedAt = 0;
             return;
         }
         if (MenuItem(M_TERMINAL, &mr, mx, &y, mw)) {
@@ -1059,10 +1066,10 @@ void DrawContextMenu(void)
                 SysOpenTerminal(dir);
             }
             gApp.menuOpen = 0;
+            sMenuOpenedAt = 0;
             return;
         }
     } else {
-        /* 端口/区间菜单 */
         int port = gApp.menuKind == 1
                        ? (int)sPortRows[gApp.menuPortIdx].port
                        : gApp.menuRange[0];
@@ -1071,6 +1078,7 @@ void DrawContextMenu(void)
             SetFlashMsg(rc == 0 ? N_FIX_STARTED
                                 : rc == 1 ? N_FIX_CANCEL : "提权启动失败，请改用复制修复命令");
             gApp.menuOpen = 0;
+            sMenuOpenedAt = 0;
             return;
         }
         if (MenuItem(M_COPYFIX, &mr, mx, &y, mw)) {
@@ -1079,6 +1087,7 @@ void DrawContextMenu(void)
             SetClipboardText(fix);
             SetFlashMsg("已复制修复命令，请在管理员终端粘贴执行");
             gApp.menuOpen = 0;
+            sMenuOpenedAt = 0;
             return;
         }
         if (MenuItem(M_OPENURL, &mr, mx, &y, mw)) {
@@ -1086,6 +1095,7 @@ void DrawContextMenu(void)
             snprintf(url, sizeof(url), "http://localhost:%d", port);
             SysOpenUrl(url);
             gApp.menuOpen = 0;
+            sMenuOpenedAt = 0;
             return;
         }
     }

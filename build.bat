@@ -41,6 +41,7 @@ gcc -mwindows -o build\app.exe %OBJS% -lopengl32 -lgdi32 -lwinmm -lws2_32 -lshel
 
 echo BUILD OK: build\app.exe
 
+if "%1"=="dist" del /q build\*.o build\app.exe
 if "%1"=="dist" goto :dist
 exit /b 0
 

@@ -43,10 +43,11 @@ int SysShowInExplorer(const char *path)
 
 int SysOpenTerminal(const char *dir)
 {
-    WCHAR wdir[MAX_PATH * 2];
+    WCHAR wdir[MAX_PATH * 2], params[MAX_PATH * 2 + 16];
     if (MultiByteToWideChar(CP_UTF8, 0, dir, -1, wdir, MAX_PATH * 2) <= 0)
         return 1;
-    HINSTANCE r = ShellExecuteW(NULL, L"open", L"cmd.exe", L"/k", wdir, SW_SHOWNORMAL);
+    swprintf(params, MAX_PATH * 2 + 16, L"/k cd /d \"%ls\"", wdir);
+    HINSTANCE r = ShellExecuteW(NULL, L"open", L"cmd.exe", params, NULL, SW_SHOWNORMAL);
     return (INT_PTR)r <= 32;
 }
 

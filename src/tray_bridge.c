@@ -78,7 +78,7 @@ static LRESULT CALLBACK MainWndProc(HWND h, UINT m, WPARAM w, LPARAM l)
 
 void tray_hook_main_window(void)
 {
-    s_hMainWnd = FindWindowW(NULL, L"kill-process-type-nk");
+    s_hMainWnd = FindWindowW(NULL, APP_TITLE_W);
     if (!s_hMainWnd) return;
     s_prevMainProc = (WNDPROC)SetWindowLongPtrW(s_hMainWnd, GWLP_WNDPROC,
                                 (LONG_PTR)MainWndProc);
@@ -179,4 +179,4 @@ void tray_notify(const char *title, const char *text)
     s_nid.dwInfoFlags = NIIF_INFO;
     Shell_NotifyIconW(NIM_MODIFY, &s_nid);
 }
-int tray_toggle_main_window(void){    HWND h = FindWindowW(NULL, L"kill-process-type-nk");    if (!h) return 0;    if (IsWindowVisible(h)) {        ShowWindow(h, SW_HIDE);        return 0;    }    ShowWindow(h, SW_SHOW);    SetForegroundWindow(h);    return 1;}
+int tray_toggle_main_window(void){    HWND h = FindWindowW(NULL, APP_TITLE_W);    if (!h) return 0;    if (IsWindowVisible(h)) {        ShowWindow(h, SW_HIDE);        return 0;    }    ShowWindow(h, SW_SHOW);    SetForegroundWindow(h);    return 1;}
