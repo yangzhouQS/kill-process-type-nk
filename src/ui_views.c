@@ -637,9 +637,17 @@ static void DrawViewAll(float x, float y, float w, float h, int nodePyOnly)
         float rowY = (float)baseY + i * (float)ROW_H;
         BridgeProc *p = &sFiltered[i];
         if (rowY > y + h) break;
-        if (i % 2 == 1)
-            DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.rowAlt);
         Rectangle rowR = {x, rowY, w, ROW_H};
+        int sel = ((int)p->pid == gApp.selectedPid);
+        int hover = PtIn(rowR) && !UiInputBlocked();
+        if (sel) {
+            DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.selBg);
+            DrawRectangle((int)x, (int)rowY, 3, ROW_H, gPal.primary);
+        } else if (hover) {
+            DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.rowHover);
+        } else if (i % 2 == 1) {
+            DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.rowAlt);
+        }
         if (ProcRowInput(rowR, p)) break;
         int ncols = BuildProcCells(p, cells, 0, 0, 0, 0);
         ProcRowColors(p, colors, ncols);
@@ -666,13 +674,17 @@ static void DrawViewTree(float x, float y, float w, float h)
         float rowY = (float)baseY + i * (float)ROW_H;
         BridgeProc *p = &gApp.treeProcs.items[i];
         if (rowY > y + h) break;
-        if (i % 2 == 1)
-            DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.rowAlt);
-        if ((int)p->pid == gApp.selectedPid) {
+        Rectangle rowR = {x, rowY, w, ROW_H};
+        int sel = ((int)p->pid == gApp.selectedPid);
+        int hover = PtIn(rowR) && !UiInputBlocked();
+        if (sel) {
             DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.selBg);
             DrawRectangle((int)x, (int)rowY, 3, ROW_H, gPal.primary);
+        } else if (hover) {
+            DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.rowHover);
+        } else if (i % 2 == 1) {
+            DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.rowAlt);
         }
-        Rectangle rowR = {x, rowY, w, ROW_H};
         Rectangle arrowZone = {x, rowY, 34 + gApp.treeDepth[i] * 18, ROW_H};
         if (PtIn(arrowZone) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) &&
             gApp.treeHasKids[i]) {
@@ -734,8 +746,12 @@ static void DrawViewProject(float x, float y, float w, float h)
         }
         if (alt % 2 == 1)
             DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.rowAlt);
-        if ((int)p->pid == gApp.selectedPid)
+        if ((int)p->pid == gApp.selectedPid) {
             DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.selBg);
+            DrawRectangle((int)x, (int)rowY, 3, ROW_H, gPal.primary);
+        } else if (PtIn((Rectangle){x, rowY, w, ROW_H}) && !UiInputBlocked()) {
+            DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.rowHover);
+        }
         alt++;
         snprintf(cells[0], 220, "%s", p->name);
         snprintf(cells[1], 220, "%lu", (unsigned long)p->pid);
@@ -782,6 +798,9 @@ static void DrawViewPorts(float x, float y, float w, float h)
                           ColorAlpha(gPal.warnC, 0.10f));
 
         Rectangle rowR = {x, rowY, w, ROW_H};
+        if (PtIn(rowR) && !UiInputBlocked() && selPortRow != i)
+            DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.rowHover);
+
         if (PtIn(rowR)) {
             if (IsDoubleClickOn(rowR) && r->p) {
                 /* 端口 -> 进程联动：定位并切换到进程页签 */
@@ -862,8 +881,11 @@ static void DrawViewLogs(float x, float y, float w, float h)
         float rowY = (float)baseY + (float)i * (float)ROW_H;
         if (rowY > y + h) break;
         BridgeLog *l = &gApp.logs.items[i];
+        Rectangle rowR = {x, rowY, w, ROW_H};
         if (i % 2 == 1)
             DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.rowAlt);
+        if (PtIn(rowR) && !UiInputBlocked())
+            DrawRectangle((int)x, (int)rowY, (int)w, ROW_H, gPal.rowHover);
         snprintf(cells[0], 220, "%s", l->timeText);
         snprintf(cells[1], 220, "%s", l->source);
         snprintf(cells[2], 220, "%s", l->name);
