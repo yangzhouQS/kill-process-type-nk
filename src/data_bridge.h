@@ -109,6 +109,8 @@ int bridge_config_bool(const char *key, int def);
 long bridge_config_long(const char *key, long def);
 void bridge_config_set_bool(const char *key, int val);
 void bridge_config_set_long(const char *key, long val);
+void bridge_config_set_str(const char *key, const char *val);
+const char *bridge_config_get_str(const char *key, const char *def);
 
 #ifdef __cplusplus
 }

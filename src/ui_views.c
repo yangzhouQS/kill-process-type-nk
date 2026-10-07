@@ -458,6 +458,24 @@ static float gCwPort[] = {100, 80, 90, 190, 90, 120, 400};
 static const char *gColsLog[] = {C_TIME, C_SOURCE, C_NAME, C_PID, C_RESULT, C_PATH};
 static float gCwLog[] = {190, 100, 190, 90, 80, 400};
 
+void ViewsSaveState(void)
+{
+    bridge_config_set_long("ui.sortCol", (long)sortAllCol);
+    bridge_config_set_long("ui.sortDesc", (long)sortAllDesc);
+    bridge_config_set_str("ui.filter", gApp.filterBuf);
+}
+
+void ViewsLoadState(void)
+{
+    sortAllCol = (int)bridge_config_long("ui.sortCol", 0);
+    sortAllDesc = (int)bridge_config_long("ui.sortDesc", 0);
+    const char *fl = bridge_config_get_str("ui.filter", "");
+    if (fl && fl[0]) {
+        snprintf(gApp.filterBuf, sizeof(gApp.filterBuf), "%s", fl);
+        gApp.filterLen = (int)strlen(gApp.filterBuf);
+    }
+}
+
 void UiOnColumnResize(void)
 {
     for (int i = 0; i < 9; i++) {
@@ -757,6 +775,16 @@ static void DrawViewPorts(float x, float y, float w, float h)
 
         Rectangle rowR = {x, rowY, w, ROW_H};
         if (PtIn(rowR)) {
+            if (IsDoubleClickOn(rowR) && r->p) {
+                /* 端口 -> 进程联动：定位并切换到进程页签 */
+                gApp.selectedPid = (int)r->pid;
+                gApp.curTab = TAB_ALL;
+                char msg[160];
+                snprintf(msg, sizeof(msg), "已定位到 %s（PID %lu），端口 %lu",
+                         r->p->name, r->pid, r->port);
+                SetFlashMsg("%s", msg);
+                continue;
+            }
             if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
                 selPortRow = i;
             if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {

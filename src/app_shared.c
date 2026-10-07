@@ -778,20 +778,42 @@ void AiApplyRisk(void)
         RebuildViews();
 }
 
+/* 系统关键进程白名单：AI 策略/批量操作永不触碰 */
+static const char *sWhitelist[] = {
+    "svchost.exe", "lsass.exe", "csrss.exe", "services.exe", "smss.exe",
+    "wininit.exe", "winlogon.exe", "explorer.exe", "system", "registry",
+    "memcompression", "dwm.exe", "fontdrvhost.exe", "wininit.exe",
+};
+
+static int IsWhitelistedName(const char *name)
+{
+    for (size_t i = 0; i < sizeof(sWhitelist) / sizeof(sWhitelist[0]); i++)
+        if (_stricmp(name, sWhitelist[i]) == 0)
+            return 1;
+    return 0;
+}
+
 void AiApplyCleanStrategy(void)
 {
     if (!gApp.aiOutput)
         return;
     unsigned int pids[256];
     int n = AiParseCleanJson(gApp.aiOutput, pids, 256);
-    int ok = 0;
+    int ok = 0, skipped = 0;
     for (int i = 0; i < n; i++) {
+        BridgeProc *p = NULL;
+        for (size_t k = 0; k < gApp.procs.count; k++)
+            if (gApp.procs.items[k].pid == pids[i]) { p = &gApp.procs.items[k]; break; }
+        if (p && IsWhitelistedName(p->name)) {
+            skipped++;
+            continue;
+        }
         if (bridge_kill_pid(pids[i]) == 0)
             ok++;
     }
     if (n > 0) {
-        char msg[96];
-        snprintf(msg, sizeof(msg), A_APPLY_DONE, ok);
+        char msg[128];
+        snprintf(msg, sizeof(msg), A_APPLY_DONE "，白名单跳过 %d", ok, skipped);
         SetFlashMsg("%s", msg);
         if (gApp.balloonNotify)
             tray_notify("AI 清理策略", msg);
@@ -956,8 +978,26 @@ void OpenProcDetail(unsigned long pid)
     if (!p) return;
 
     SysProcDetail d;
-    SysQueryProcDetail(pid, &d);
+    SysQueryProcDetail(pid, (unsigned long)p->ppid, &d);
     sDetailPid = pid;
+
+    /* 监听端口列表 */
+    char portsLine[256];
+    {
+        int pn = 0;
+        portsLine[0] = 0;
+        for (size_t k = 0; k < gApp.ports.count && pn < 200; k++) {
+            if (gApp.ports.items[k].pid == p->pid) {
+                char one[24];
+                snprintf(one, sizeof(one), "%s%lu", pn ? ", " : "",
+                         (unsigned long)gApp.ports.items[k].port);
+                strcat(portsLine + pn, one);
+                pn += (int)strlen(one);
+            }
+        }
+        if (!pn)
+            snprintf(portsLine, sizeof(portsLine), "(无)");
+    }
 
     snprintf(sDetailBuf, sizeof(sDetailBuf),
              "进程详情\n\n"
@@ -978,6 +1018,9 @@ void OpenProcDetail(unsigned long pid)
              (double)p->memBytes / 1048576.0, ProcTypeName(p->type),
              p->aiRisk ? (p->aiRisk >= 3 ? "高" : p->aiRisk == 2 ? "中" : "低") : "-",
              (unsigned long)d.threads, (unsigned long)d.handles,
+             (unsigned long)d.privileges,
+             d.parentName[0] ? d.parentName : "(已退出)",
+             portsLine,
              d.startTime[0] ? d.startTime : "-",
              d.title[0] ? d.title : "(无窗口)",
              p->path[0] ? p->path : P_NOREAD,

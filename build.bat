@@ -1,7 +1,7 @@
 @echo off
 rem build.bat - kill-process-type-nk (raylib 2D UI + tray + AI bridge)
-rem ??: build.bat          ??
-rem       build.bat dist    ?? + ?? dist\kill-process-type-nk.zip
+rem usage: build.bat        build
+rem        build.bat dist   build + package dist\kill-process-type-nk.zip
 setlocal
 if not exist build mkdir build
 
@@ -50,13 +50,7 @@ copy /y build\app.exe dist\app.exe
 copy /y assets\icon.png dist\assets\
 copy /y assets\icon.ico dist\assets\
 copy /y assets\fonts\msyh.ttf dist\assets\fonts\
-(
-echo kill-process-type-nk - Node/Python ?????
-echo.
-echo ?? app.exe ???????????????
-echo CLI: app.exe /list ^| /ports ^| /kill pid... ^| /ai scan
-echo ?? assets ???????????/????
-) > dist\????.txt
+copy /y README.md dist\
 powershell -NoProfile -Command "Compress-Archive -Path dist\* -DestinationPath dist\kill-process-type-nk.zip -Force"
 echo DIST OK: dist\kill-process-type-nk.zip
 exit /b 0

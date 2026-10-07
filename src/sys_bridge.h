@@ -23,10 +23,12 @@ typedef struct {
     char title[128];      /* 主窗口标题（无窗口为空） */
     unsigned long threads;
     unsigned long handles;
-    char startTime[32];   /* 进程启动时间 */
+    unsigned long privileges; /* 特权数（需权限，失败为 0） */
+    char parentName[64];      /* 父进程名 */
+    char startTime[32];       /* 进程启动时间 */
 } SysProcDetail;
 
-int SysQueryProcDetail(unsigned long pid, SysProcDetail *out);
+int SysQueryProcDetail(unsigned long pid, unsigned long ppid, SysProcDetail *out);
 
 unsigned char *SysExtractIconRGBA(const char *exePath, int size, int *outW, int *outH); /* 调用方 free */             /* 唤起已有实例窗口 */
 

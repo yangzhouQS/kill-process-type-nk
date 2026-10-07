@@ -299,3 +299,22 @@ int bridge_scan_async_poll(BridgeProcList *procs, BridgePortList *ports)
     sAsyncState = 0;
     return 1;
 }
+
+void bridge_config_set_str(const char *key, const char *val)
+{
+    wchar_t wkey[128], wval[512];
+    MultiByteToWideChar(CP_UTF8, 0, key, -1, wkey, 128);
+    MultiByteToWideChar(CP_UTF8, 0, val, -1, wval, 512);
+    WritePrivateProfileStringW(L"main", wkey, wval, ConfigGetPath());
+}
+
+const char *bridge_config_get_str(const char *key, const char *def)
+{
+    static char out[512];
+    wchar_t wkey[128], wdef[512], wout[512];
+    MultiByteToWideChar(CP_UTF8, 0, key, -1, wkey, 128);
+    MultiByteToWideChar(CP_UTF8, 0, def, -1, wdef, 512);
+    GetPrivateProfileStringW(L"main", wkey, wdef, wout, 512, ConfigGetPath());
+    WideCharToMultiByte(CP_UTF8, 0, wout, -1, out, sizeof(out), NULL, NULL);
+    return out;
+}

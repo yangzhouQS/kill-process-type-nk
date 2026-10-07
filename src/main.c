@@ -264,6 +264,23 @@ int main(int argc, char **argv)
     gApp.anomalyMemMB = (int)bridge_config_long("AnomalyMemMB", 10);
 
     ViewsInit();
+    ViewsLoadState();
+    /* 恢复 AI 会话 */
+    {
+        FILE *f = fopen("ai_session.txt", "rb");
+        if (f) {
+            fseek(f, 0, SEEK_END);
+            long n = ftell(f);
+            fseek(f, 0, SEEK_SET);
+            if (n > 0 && n < 2 * 1024 * 1024) {
+                gApp.aiOutputCap = (int)n + 64;
+                gApp.aiOutput = (char *)malloc((size_t)gApp.aiOutputCap);
+                size_t rd = fread(gApp.aiOutput, 1, (size_t)n, f);
+                gApp.aiOutput[rd] = 0;
+            }
+            fclose(f);
+        }
+    }
     RefreshData();
     RebuildViews();
     bridge_free_logs(&gApp.logs);
@@ -425,6 +442,20 @@ int main(int argc, char **argv)
             DrawStatsModal();
 
         EndDrawing();
+    }
+
+    /* 保存会话状态 */
+    ViewsSaveState();
+    {
+        if (gApp.aiOutput && gApp.aiOutput[0]) {
+            FILE *f = fopen("ai_session.txt", "wb");
+            if (f) {
+                fwrite(gApp.aiOutput, 1, strlen(gApp.aiOutput), f);
+                fclose(f);
+            }
+        } else {
+            remove("ai_session.txt");
+        }
     }
 
     /* 保存窗口位置 */

@@ -180,7 +180,7 @@ static BOOL CALLBACK FindTitleProc(HWND h, LPARAM lp)
     return TRUE;
 }
 
-int SysQueryProcDetail(unsigned long pid, SysProcDetail *out)
+int SysQueryProcDetail(unsigned long pid, unsigned long ppid, SysProcDetail *out)
 {
     ZeroMemory(out, sizeof(*out));
     out->pid = pid;
@@ -192,6 +192,19 @@ int SysQueryProcDetail(unsigned long pid, SysProcDetail *out)
     if (GetProcessHandleCount(h, &handles))
         out->handles = handles;
 
+    /* 特权数 */
+    HANDLE tok;
+    if (OpenProcessToken(h, TOKEN_QUERY, &tok)) {
+        DWORD retLen = 0;
+        if (GetTokenInformation(tok, TokenPrivileges, NULL, 0, &retLen) && retLen) {
+            PTOKEN_PRIVILEGES tp = (PTOKEN_PRIVILEGES)malloc(retLen);
+            if (tp && GetTokenInformation(tok, TokenPrivileges, tp, retLen, &retLen))
+                out->privileges = tp->PrivilegeCount;
+            free(tp);
+        }
+        CloseHandle(tok);
+    }
+
     FILETIME ftC, ftX, ftK, ftU;
     if (GetProcessTimes(h, &ftC, &ftX, &ftK, &ftU)) {
         SYSTEMTIME st;
@@ -201,6 +214,22 @@ int SysQueryProcDetail(unsigned long pid, SysProcDetail *out)
                  st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
     }
     CloseHandle(h);
+
+    /* 父进程名 */
+    {
+        HANDLE ph = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)ppid);
+        if (ph) {
+            WCHAR pname[64];
+            DWORD sz = 64;
+            if (QueryFullProcessImageNameW(ph, 0, pname, &sz)) {
+                WCHAR *base = wcsrchr(pname, L'\\');
+                base = base ? base + 1 : pname;
+                WideCharToMultiByte(CP_UTF8, 0, base, -1, out->parentName,
+                                    sizeof(out->parentName), NULL, NULL);
+            }
+            CloseHandle(ph);
+        }
+    }
 
     /* 线程数 */
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);

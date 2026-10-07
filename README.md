@@ -1,10 +1,18 @@
-# kill-process-type-nk
+﻿# kill-process-type-nk
 
 Node/Python 进程终结者 —— Windows 下的进程/端口管理工具（raylib 2D UI 重写版）。
 
 识别并管理本机的 **Node.js / Python** 相关进程：一键终止、端口占用排查、孤儿进程清理、AI 辅助分析与风险评级。
 
-![截图占位](docs/screenshot.png)
+> 基于 [kill-process-type](https://github.com/yangzhouQS/kill-process-type)（Win32 原生版）的 raylib 2D UI 重写版。
+
+<p align="center">
+  <img src="docs/screenshot_main.png" width="600" alt="主界面" />
+</p>
+<p align="center">
+  <img src="docs/screenshot_ai.png" width="480" alt="AI 助手" />&nbsp;
+  <img src="docs/screenshot_tree.png" width="480" alt="进程树" />
+</p>
 
 ## 功能
 
