@@ -1,4 +1,4 @@
-/* app_shared.c — 主题/字体/全局状态/通用控件 实现 */
+﻿/* app_shared.c — 主题/字体/全局状态/通用控件 实现 */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -593,7 +593,25 @@ int BeginList(float x, float y, float w, float h, float contentRows, float *scro
         }
     }
     BeginScissorMode((int)x, (int)(y + 43), (int)w, (int)viewH + 1);
-    return (int)(y + 30 - *scroll);
+    return (int)(y + 43 - *scroll);
+}
+
+int BeginListPlain(float x, float y, float w, float h, float contentRows,
+                   float *scroll, int inputEnabled)
+{
+    float contentH = contentRows * (float)ROW_H;
+    float maxOff = contentH > h ? contentH - h : 0.0f;
+    Rectangle listR = {x, y, w, h};
+    if (PointInRect(listR) && inputEnabled) {
+        float mw = GetMouseWheelMove();
+        if (mw != 0) {
+            *scroll -= mw * 60.0f;
+            if (*scroll < 0) *scroll = 0;
+            if (*scroll > maxOff) *scroll = maxOff;
+        }
+    }
+    BeginScissorMode((int)x, (int)y, (int)w, (int)h);
+    return (int)(y - *scroll);
 }
 
 void EndList(void)
@@ -924,8 +942,8 @@ void DrawAiPanel(void)
         gApp.scrollAiOut = 1e9f;
         gApp.aiNeedResetScroll = 0;
     }
-    int baseY = BeginList(outR.x, outR.y, outR.width, outR.height, contentRows,
-                          &gApp.scrollAiOut, 1);
+    int baseY = BeginListPlain(outR.x, outR.y, outR.width, outR.height, contentRows,
+                               &gApp.scrollAiOut, 1);
     /* BeginList 的 maxOff 用行数近似，重置滚动后本帧 clamp 自然生效 */
     if (gApp.aiOutput && gApp.aiOutput[0])
         DrawRich(gApp.aiOutput, outR.x + 8, (float)baseY + 4,
@@ -1057,8 +1075,8 @@ void DrawProcDetailModal(void)
     DrawRectangleRounded(outR, 0.03f, 6, gPal.surfaceVariant);
 
     float rows = (float)WrapCount(sDetailBuf, outR.width - 20, FS_TXT) + 2;
-    int baseY = BeginList(outR.x, outR.y, outR.width, outR.height, rows,
-                          &gApp.scrollAiOut, 1);
+    int baseY = BeginListPlain(outR.x, outR.y, outR.width, outR.height, rows,
+                               &gApp.scrollAiOut, 1);
     DrawRich(sDetailBuf, outR.x + 10, (float)baseY + 4, outR.width - 20, FS_TXT,
              gPal.onSurface, &gApp.scrollAiOut);
     EndList();

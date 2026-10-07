@@ -125,7 +125,9 @@ void DrawTableHeader(float x, float y, float w, const char **cols,
                      const float *cw, int ncols, int *sortCol,
                      int *sortDesc);
 int  BeginList(float x, float y, float w, float h, float contentRows,
-               float *scroll, int inputEnabled); /* 裁剪+滚轮（inputEnabled=0 禁滚轮），返回内容起始 y */
+               float *scroll, int inputEnabled); /* 裁剪+滚轮（有表头），返回内容起始 y */
+int  BeginListPlain(float x, float y, float w, float h, float contentRows,
+               float *scroll, int inputEnabled); /* 无表头版（弹窗内容区），返回内容起始 y */
 void EndList(void);
 void DrawAiPanel(void);
 void AiChatSubmit(void);
