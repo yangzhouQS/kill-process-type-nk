@@ -630,7 +630,7 @@ static void DrawViewAll(float x, float y, float w, float h, int nodePyOnly)
 {
     (void)nodePyOnly;
     DrawTableHeader(x, y, w, gColsAll, gCwAll, 8, sSortCol, sSortDesc);
-    int baseY = BeginList(x, y, w, h, (float)sFilteredCount, &gApp.scrollProc);
+    int baseY = BeginList(x, y, w, h, (float)sFilteredCount, &gApp.scrollProc, !UiInputBlocked());
     char cells[9][220];
     Color colors[9];
     for (int i = 0; i < sFilteredCount; i++) {
@@ -659,7 +659,7 @@ static void DrawViewAll(float x, float y, float w, float h, int nodePyOnly)
 static void DrawViewTree(float x, float y, float w, float h)
 {
     DrawTableHeader(x, y, w, gColsTree, gCwTree, 6, NULL, NULL);
-    int baseY = BeginList(x, y, w, h, (float)gApp.treeCount, &gApp.scrollTree);
+    int baseY = BeginList(x, y, w, h, (float)gApp.treeCount, &gApp.scrollTree, !UiInputBlocked());
     char cells[6][220];
     Color colors[6];
     for (int i = 0; i < gApp.treeCount; i++) {
@@ -693,7 +693,7 @@ static void DrawViewTree(float x, float y, float w, float h)
 static void DrawViewProject(float x, float y, float w, float h)
 {
     DrawTableHeader(x, y, w, gColsProj, gCwProj, 6, NULL, NULL);
-    int baseY = BeginList(x, y, w, h, (float)gApp.projRowCount, &gApp.scrollProj);
+    int baseY = BeginList(x, y, w, h, (float)gApp.projRowCount, &gApp.scrollProj, !UiInputBlocked());
     char cells[6][220];
     Color colors[6];
     int row = 0;
@@ -768,7 +768,7 @@ static void DrawViewPorts(float x, float y, float w, float h)
     DrawTableHeader(x, y, w, gColsPort, gCwPort, 7, &sortPortCol, &sortPortDesc);
     /* 排序快照（每次进入按当前排序状态重排行序） */
     qsort(sPortRows, (size_t)sPortRowCount, sizeof(PortRow), CmpPortRow);
-    int baseY = BeginList(x, y, w, h, (float)sPortRowCount, &gApp.scrollPort);
+    int baseY = BeginList(x, y, w, h, (float)sPortRowCount, &gApp.scrollPort, !UiInputBlocked());
     char cells[7][220];
     Color colors[7];
     for (int i = 0; i < sPortRowCount; i++) {
@@ -855,7 +855,7 @@ static void DrawViewLogs(float x, float y, float w, float h)
         gApp.modal = 4;
     }
     qsort(gApp.logs.items, gApp.logs.count, sizeof(BridgeLog), CmpLogRow);
-    int baseY = BeginList(x, y, w, h, (float)gApp.logs.count, &gApp.scrollLog);
+    int baseY = BeginList(x, y, w, h, (float)gApp.logs.count, &gApp.scrollLog, !UiInputBlocked());
     char cells[6][220];
     Color colors[6];
     for (size_t i = 0; i < gApp.logs.count; i++) {

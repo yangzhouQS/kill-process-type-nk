@@ -352,8 +352,7 @@ int main(int argc, char **argv)
 
         float listY = 214;
         float listH = (float)GetScreenHeight() - listY - 36;
-        if (gApp.modal == 0)
-            DrawCurrentView(8, listY, (float)GetScreenWidth() - 16, listH);
+        DrawCurrentView(8, listY, (float)GetScreenWidth() - 16, listH);
 
         DrawStatusBar();
         if (gApp.modal == 0)

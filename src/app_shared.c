@@ -577,13 +577,14 @@ void DrawTableHeader(float x, float y, float w, const char **cols,
     DrawRectangle((int)x, (int)(y + 43), (int)w, 1, gPal.outline);
 }
 
-int BeginList(float x, float y, float w, float h, float contentRows, float *scroll)
+int BeginList(float x, float y, float w, float h, float contentRows, float *scroll,
+              int inputEnabled)
 {
     float viewH = h - 44;
     float contentH = contentRows * (float)ROW_H;
     float maxOff = contentH > viewH ? contentH - viewH : 0.0f;
     Rectangle listR = {x, y, w, h};
-    if (PointInRect(listR) && !UiInputBlocked()) {
+    if (PointInRect(listR) && inputEnabled) {
         float mw = GetMouseWheelMove();
         if (mw != 0) {
             *scroll -= mw * 60.0f;
@@ -924,7 +925,7 @@ void DrawAiPanel(void)
         gApp.aiNeedResetScroll = 0;
     }
     int baseY = BeginList(outR.x, outR.y, outR.width, outR.height, contentRows,
-                          &gApp.scrollAiOut);
+                          &gApp.scrollAiOut, 1);
     /* BeginList 的 maxOff 用行数近似，重置滚动后本帧 clamp 自然生效 */
     if (gApp.aiOutput && gApp.aiOutput[0])
         DrawRich(gApp.aiOutput, outR.x + 8, (float)baseY + 4,
@@ -1008,7 +1009,6 @@ void OpenProcDetail(unsigned long pid)
     }
 
     snprintf(sDetailBuf, sizeof(sDetailBuf),
-             "进程详情\n\n"
              "名称：    %s\n"
              "PID：     %lu\n"
              "父PID：   %lu\n"
@@ -1057,7 +1057,8 @@ void DrawProcDetailModal(void)
     DrawRectangleRounded(outR, 0.03f, 6, gPal.surfaceVariant);
 
     float rows = (float)WrapCount(sDetailBuf, outR.width - 20, FS_TXT) + 2;
-    int baseY = BeginList(outR.x, outR.y, outR.width, outR.height, rows, &gApp.scrollAiOut);
+    int baseY = BeginList(outR.x, outR.y, outR.width, outR.height, rows,
+                          &gApp.scrollAiOut, 1);
     DrawRich(sDetailBuf, outR.x + 10, (float)baseY + 4, outR.width - 20, FS_TXT,
              gPal.onSurface, &gApp.scrollAiOut);
     EndList();
