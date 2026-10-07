@@ -17,5 +17,6 @@ void MainUiRefresh(void);      /* 刷新数据+重建视图+状态栏 */
 void CollectOrphanPids(unsigned int **pids, int *count); /* 孤儿收集 */
 void BaselineSave(void);
 void BaselineCompare(void);
+void ExportProcessesCsv(void); /* 全部进程导出 CSV */
 
 #endif /* UI_VIEWS_H */

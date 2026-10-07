@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "tray_bridge.h"
+#include "version.h"
 #include "sys_bridge.h"
 
 #define WM_APP_TRAY (WM_APP + 1)
@@ -109,7 +110,7 @@ int tray_init(void)
                    LR_LOADFROMFILE);
     if (!s_nid.hIcon)
         s_nid.hIcon = LoadIconW(NULL, (LPCWSTR)IDI_APPLICATION);
-    lstrcpynW(s_nid.szTip, L"kill-process-type-nk", 128);
+    lstrcpynW(s_nid.szTip, L"" APP_TITLE_W, 128);
     s_added = Shell_NotifyIconW(NIM_ADD, &s_nid);
     return s_added ? 0 : -1;
 }
@@ -160,7 +161,7 @@ int tray_poll(void)
 
 void MinimizeToTray(void)
 {
-    HWND h = FindWindowA(NULL, "kill-process-type-nk");
+    HWND h = FindWindowA(NULL, APP_TITLE_A);
     if (h)
         ShowWindow(h, SW_HIDE);
 }

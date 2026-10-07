@@ -13,6 +13,7 @@
 #include "tray_bridge.h"
 #include "ai_bridge.h"
 #include "sys_bridge.h"
+#include "version.h"
 
 static int sRefreshPending = 0;
 
@@ -212,6 +213,12 @@ static int RunCli(int argc, char **argv)
 
 int main(int argc, char **argv)
 {
+    if (argc >= 2 &&
+        (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "/version") == 0)) {
+        printf(APP_NAME " v" APP_VERSION "\n");
+        return 0;
+    }
+
     {
         int cr = RunCli(argc, argv);
         if (cr >= 0) return cr;
@@ -231,7 +238,7 @@ int main(int argc, char **argv)
     SysClampWindowRect(&winX, &winY, &winW, &winH);
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
-    InitWindow(winW, winH, "kill-process-type-nk");
+    InitWindow(winW, winH, APP_TITLE);
     SetWindowPosition(winX, winY);
     SetTargetFPS(60);
 
@@ -412,6 +419,10 @@ int main(int argc, char **argv)
             DrawSettingsModal();
         else if (gApp.modal == 2)
             DrawAiPanel();
+        else if (gApp.modal == 3)
+            DrawProcDetailModal();
+        else if (gApp.modal == 4)
+            DrawStatsModal();
 
         EndDrawing();
     }

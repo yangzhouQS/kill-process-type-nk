@@ -9,7 +9,8 @@ extern "C" {
 #endif
 
 int AiAvailable(void);                       /* kilo.exe 是否可找到 */
-void AiStartChat(const char *msg);           /* 对话（带进程上下文） */
+void AiStartChat(const char *msg);
+void AiStartChatCtx(const char *context, const char *msg); /* 多轮上下文 */           /* 对话（带进程上下文） */
 void AiStartAnalyze(const BridgeProc *p, const char *portsText); /* 单进程分析 */
 int AiPoll(void);                            /* 0 空闲 1 运行 2 完成 3 失败 */
 const char *AiGetResult(void);

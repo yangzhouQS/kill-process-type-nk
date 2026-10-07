@@ -35,6 +35,9 @@ extern Font gFont;
 void LoadAppFont(void);
 void DrawTxt(const char *text, float x, float y, float size, Color c);
 const char *Clip(const char *s, float maxW); /* 超宽截断（…结尾） */
+void DrawRowCells(const char (*cells)[220], const Color *colors,
+                    const float *cw, int ncols,
+                    float x, float rowY, int withIcon);
 Texture2D IconForProc(const char *path);
 void IconCacheFree(void);
 Vector2 MeasureTxt(const char *text, float size);
@@ -128,7 +131,11 @@ void AiChatSubmit(void);
 void AiPanelShowText(const char *text); /* 清空输出并显示文本 */
 void AiApplyRisk(void);                 /* 解析 AI 结果 JSON 并应用风险列 */
 void AiApplyCleanStrategy(void);        /* 按清理策略 JSON 终止进程 */
+void DrawProcDetailModal(void);         /* 进程详情弹窗 */
+void DrawStatsModal(void);              /* 终止历史统计弹窗 */
+void BuildKillStats(void);              /* 聚合日志统计 */
 void UiOnColumnResize(void);            /* 列宽拖拽结束回调（写配置） */
+void OpenProcDetail(unsigned long pid);  /* 打开进程详情（modal=3） */
 void DrawAiJobPoll(void);   /* 轮询异步 AI 结果 */
 
 /* ---------- 视图（ui_views.c） ---------- */

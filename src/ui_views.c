@@ -1,6 +1,7 @@
 ﻿/* ui_views.c — 7 视图 + 右键菜单 + 设置弹窗 */
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include <string.h>
 #include <stdarg.h>
 
@@ -486,22 +487,6 @@ void ViewsInit(void)
 
 /* ---------- 通用行绘制（cells 数组 + 截断） ---------- */
 
-static void DrawRowCells(const char (*cells)[220], const Color *colors,
-                         const float *cw, int ncols,
-                         float x, float rowY, int withIcon)
-{
-    float cx = x + 8;
-    for (int c = 0; c < ncols; c++) {
-        float tx = cx;
-        float avail = cw[c] - 12;
-        if (c == 0 && withIcon) {
-            tx += 34;
-            avail -= 34;
-        }
-        DrawTxt(Clip(cells[c], avail), tx, rowY + 11, FS_TXT, colors[c]);
-        cx += cw[c];
-    }
-}
 
 static void DrawRowIcon(const BridgeProc *p, float x, float rowY)
 {
@@ -582,11 +567,35 @@ static void DrawProcRowCommon(const BridgeProc *p, float x, float rowY,
     DrawRowCells(cells, colors, cw, ncols, x, rowY, 1);
 }
 
+/* 双击检测（300ms 内同行两次左键） */
+static int IsDoubleClickOn(Rectangle r)
+{
+    static double lastClick = 0;
+    static Vector2 lastPos = {0, 0};
+    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && PtIn(r)) {
+        double now = GetTime();
+        Vector2 m = GetMousePosition();
+        if (now - lastClick < 0.3 && fabsf(m.x - lastPos.x) < 6 &&
+            fabsf(m.y - lastPos.y) < 6) {
+            lastClick = 0;
+            return 1;
+        }
+        lastClick = now;
+        lastPos = m;
+    }
+    return 0;
+}
+
 /* 返回是否命中右键 */
 static int ProcRowInput(Rectangle rowR, const BridgeProc *p)
 {
     if (!PtIn(rowR))
         return 0;
+    if (IsDoubleClickOn(rowR)) {
+        extern void OpenProcDetail(unsigned long pid);
+        OpenProcDetail(p->pid);
+        return 0;
+    }
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
         gApp.selectedPid = (int)p->pid;
     if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
@@ -804,6 +813,11 @@ static int CmpLogRow(const void *a, const void *b)
 static void DrawViewLogs(float x, float y, float w, float h)
 {
     DrawTableHeader(x, y, w, gColsLog, gCwLog, 6, &sortLogCol, &sortLogDesc);
+    if (DrawTextButton("终止统计", (Rectangle){x + w - 130, y - 2, 120, 40}, 1)) {
+        extern void BuildKillStats(void);
+        BuildKillStats();
+        gApp.modal = 4;
+    }
     qsort(gApp.logs.items, gApp.logs.count, sizeof(BridgeLog), CmpLogRow);
     int baseY = BeginList(x, y, w, h, (float)gApp.logs.count, &gApp.scrollLog);
     char cells[6][220];
@@ -901,7 +915,7 @@ void DrawContextMenu(void)
         return;
     }
 
-    int itemCount = gApp.menuKind == 0 ? 7 : 3;
+    int itemCount = gApp.menuKind == 0 ? 9 : 3;
     float mw = 460;
     float mh = itemCount * 44 + 22;
     float mx = gApp.menuPos.x, my = gApp.menuPos.y;
@@ -923,6 +937,17 @@ void DrawContextMenu(void)
     float y = my + 12;
     Rectangle mr;
     if (gApp.menuKind == 0) {
+        if (MenuItem(M_DETAIL, &mr, mx, &y, mw)) {
+            extern void OpenProcDetail(unsigned long pid);
+            OpenProcDetail((unsigned long)gApp.selectedPid);
+            gApp.menuOpen = 0;
+            return;
+        }
+        if (MenuItem(M_EXPORT_CSV, &mr, mx, &y, mw)) {
+            ExportProcessesCsv();
+            gApp.menuOpen = 0;
+            return;
+        }
         if (MenuItem(M_KILL, &mr, mx, &y, mw)) {
             if (gApp.selectedPid > 0) {
                 bridge_kill_pid((unsigned int)gApp.selectedPid);
@@ -1276,4 +1301,36 @@ void BaselineCompare(void)
         used += snprintf(out + used, sizeof(out) - used, "  (无)\n");
 
     AiPanelShowText(out);
+}
+void ExportProcessesCsv(void)
+{
+    FILE *f = fopen("processes_export.csv", "wb");
+    if (!f) {
+        SetFlashMsg("CSV 导出失败（无法写入文件）");
+        return;
+    }
+    /* UTF-8 BOM（Excel 兼容） */
+    fwrite("\xef\xbb\xbf", 1, 3, f);
+    fprintf(f, "进程名,PID,父PID,内存MB,CPU%%,类型,AI风险,可执行路径,命令行,项目\n");
+    for (size_t i = 0; i < gApp.procs.count; i++) {
+        BridgeProc *p = &gApp.procs.items[i];
+        char pathEsc[600], cmdEsc[600], projEsc[300];
+        snprintf(pathEsc, sizeof(pathEsc), "%s", p->path);
+        snprintf(cmdEsc, sizeof(cmdEsc), "%s", p->cmdline);
+        snprintf(projEsc, sizeof(projEsc), "%s", p->project);
+        /* 内部 " 翻倍后整体包引号 */
+        for (char *q = pathEsc; *q; q++)
+            if (*q == '"') { memmove(q + 1, q, strlen(q) + 1); *q = '"'; q++; }
+        for (char *q = cmdEsc; *q; q++)
+            if (*q == '"') { memmove(q + 1, q, strlen(q) + 1); *q = '"'; q++; }
+        for (char *q = projEsc; *q; q++)
+            if (*q == '"') { memmove(q + 1, q, strlen(q) + 1); *q = '"'; q++; }
+        fprintf(f, "\"%s\",%lu,%lu,%.1f,%.1f,\"%s\",%d,\"%s\",\"%s\",\"%s\"\n",
+                p->name, (unsigned long)p->pid, (unsigned long)p->ppid,
+                (double)p->memBytes / 1048576.0,
+                (double)(p->cpuPct < 0 ? 0 : p->cpuPct),
+                ProcTypeName(p->type), p->aiRisk, pathEsc, cmdEsc, projEsc);
+    }
+    fclose(f);
+    SetFlashMsg("已导出 processes_export.csv（程序目录）");
 }

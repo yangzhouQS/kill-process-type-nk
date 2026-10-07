@@ -3,11 +3,13 @@
 #include <string.h>
 #include <windows.h>
 #include <shlobj.h>
+#include <tlhelp32.h>
 
 #include "sys_bridge.h"
+#include "version.h"
 
 #define SINGLE_MUTEX_A "kpt_nk_single_instance_mutex"
-#define MAIN_WINDOW_TITLE "kill-process-type-nk"
+#define MAIN_WINDOW_TITLE APP_TITLE_A
 
 int SysRelaunch(const char *path, const char *cmdline)
 {
@@ -109,7 +111,7 @@ int SysSingleInstance(void)
 
 void SysFlashTrayWindow(void)
 {
-    HWND h = FindWindowA(NULL, MAIN_WINDOW_TITLE);
+    HWND h = FindWindowA(NULL, APP_TITLE_A);
     if (h) {
         ShowWindow(h, SW_SHOW);
         SetForegroundWindow(h);
@@ -157,3 +159,71 @@ int SysSetAutoRun(int on)
     return r == ERROR_SUCCESS ? 0 : 1;
 }
 unsigned char *SysExtractIconRGBA(const char *exePath, int size, int *outW, int *outH){    WCHAR wpath[MAX_PATH * 2];    HICON hIcon = NULL;    *outW = 0; *outH = 0;    if (MultiByteToWideChar(CP_UTF8, 0, exePath, -1, wpath, MAX_PATH * 2) <= 0)        return NULL;    if (ExtractIconExW(wpath, 0, NULL, &hIcon, 1) != 1 || !hIcon)        return NULL;        ICONINFO ii;    if (!GetIconInfo(hIcon, &ii)) { DestroyIcon(hIcon); return NULL; }        BITMAP bm;    if (!GetObjectW(ii.hbmColor, sizeof(bm), &bm)) {        DeleteObject(ii.hbmColor); DeleteObject(ii.hbmMask); DestroyIcon(hIcon);        return NULL;    }    int w = bm.bmWidth, h = bm.bmHeight;        BITMAPINFO bi;    ZeroMemory(&bi, sizeof(bi));    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);    bi.bmiHeader.biWidth = w;    bi.bmiHeader.biHeight = -h; /* top-down */    bi.bmiHeader.biPlanes = 1;    bi.bmiHeader.biBitCount = 32;    bi.bmiHeader.biCompression = BI_RGB;        unsigned char *px = (unsigned char *)malloc((size_t)w * h * 4);    if (!px) {        DeleteObject(ii.hbmColor); DeleteObject(ii.hbmMask); DestroyIcon(hIcon);        return NULL;    }    HDC dc = GetDC(NULL);    int lines = GetDIBits(dc, ii.hbmColor, 0, h, px, &bi, DIB_RGB_COLORS);    ReleaseDC(NULL, dc);    DeleteObject(ii.hbmColor);    DeleteObject(ii.hbmMask);    DestroyIcon(hIcon);    if (lines != h) { free(px); return NULL; }        /* BGRA -> RGBA */    for (int i = 0; i < w * h; i++) {        unsigned char b = px[i * 4 + 0];        px[i * 4 + 0] = px[i * 4 + 2];        px[i * 4 + 2] = b;    }    *outW = w; *outH = h;    return px;}void SysClampWindowRect(int *x, int *y, int *w, int *h){    int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);    int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);    int vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);    int vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);    if (*w > vw) *w = vw;    if (*h > vh) *h = vh;    if (*x < vx) *x = vx;    if (*x + *w > vx + vw) *x = vx + vw - *w;    if (*y < vy) *y = vy;    if (*y + *h > vy + vh) *y = vy + vh - *h;}int SysRestartElevated(void){    WCHAR exe[MAX_PATH];    if (!GetModuleFileNameW(NULL, exe, MAX_PATH))        return 2;    SHELLEXECUTEINFOW sei;    ZeroMemory(&sei, sizeof(sei));    sei.cbSize = sizeof(sei);    sei.fMask = SEE_MASK_NOASYNC;    sei.lpVerb = L"runas";    sei.lpFile = exe;    sei.nShow = SW_SHOWNORMAL;    if (!ShellExecuteExW(&sei)) {        DWORD e = GetLastError();        return (e == ERROR_CANCELLED) ? 1 : 2;    }    return 0;}
+
+typedef struct {
+    DWORD wantPid;
+    WCHAR title[128];
+} FindTitleCtx;
+
+static BOOL CALLBACK FindTitleProc(HWND h, LPARAM lp)
+{
+    FindTitleCtx *ctx = (FindTitleCtx *)lp;
+    DWORD pid = 0;
+    GetWindowThreadProcessId(h, &pid);
+    if (pid != ctx->wantPid || !IsWindowVisible(h))
+        return TRUE;
+    WCHAR buf[128];
+    if (GetWindowTextW(h, buf, 128) > 0) {
+        lstrcpynW(ctx->title, buf, 128);
+        return FALSE; /* 找到即停 */
+    }
+    return TRUE;
+}
+
+int SysQueryProcDetail(unsigned long pid, SysProcDetail *out)
+{
+    ZeroMemory(out, sizeof(*out));
+    out->pid = pid;
+    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)pid);
+    if (!h)
+        return 1;
+
+    DWORD handles = 0;
+    if (GetProcessHandleCount(h, &handles))
+        out->handles = handles;
+
+    FILETIME ftC, ftX, ftK, ftU;
+    if (GetProcessTimes(h, &ftC, &ftX, &ftK, &ftU)) {
+        SYSTEMTIME st;
+        FileTimeToSystemTime(&ftC, &st);
+        snprintf(out->startTime, sizeof(out->startTime),
+                 "%04u-%02u-%02u %02u:%02u:%02u",
+                 st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+    }
+    CloseHandle(h);
+
+    /* 线程数 */
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snap != INVALID_HANDLE_VALUE) {
+        THREADENTRY32 te;
+        te.dwSize = sizeof(te);
+        DWORD cnt = 0;
+        if (Thread32First(snap, &te)) {
+            do {
+                if (te.th32OwnerProcessID == (DWORD)pid)
+                    cnt++;
+            } while (Thread32Next(snap, &te));
+        }
+        CloseHandle(snap);
+        out->threads = cnt;
+    }
+
+    /* 主窗口标题 */
+    FindTitleCtx ctx;
+    ctx.wantPid = (DWORD)pid;
+    ctx.title[0] = 0;
+    EnumWindows(FindTitleProc, (LPARAM)&ctx);
+    WideCharToMultiByte(CP_UTF8, 0, ctx.title, -1, out->title,
+                        sizeof(out->title), NULL, NULL);
+    return 0;
+}

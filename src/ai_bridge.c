@@ -240,9 +240,19 @@ static BOOL AiLaunch(const char *prompt)
 
 void AiStartChat(const char *msg)
 {
-    char prompt[16384];
-    snprintf(prompt, sizeof(prompt),
-             "你是进程管理工具内置助手，用中文简洁回答。问题：%s", msg);
+    AiStartChatCtx(NULL, msg);
+}
+
+void AiStartChatCtx(const char *context, const char *msg)
+{
+    static char prompt[20000];
+    if (context && context[0])
+        snprintf(prompt, sizeof(prompt),
+                 "你是进程管理工具内置助手，用中文简洁回答。\n%s\n问题：%s",
+                 context, msg);
+    else
+        snprintf(prompt, sizeof(prompt),
+                 "你是进程管理工具内置助手，用中文简洁回答。问题：%s", msg);
     AiLaunch(prompt);
 }
 

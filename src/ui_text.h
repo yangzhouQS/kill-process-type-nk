@@ -105,6 +105,8 @@
 #define T_ANOMALY_FMT "⚠ %s（PID %lu）内存持续增长：12秒内 +%luMB"
 
 /* 右键菜单：进程行 */
+#define M_DETAIL    "进程详情"
+#define M_EXPORT_CSV "导出全部CSV"
 #define M_KILL      "终止选中"
 #define M_SMARTRE   "智能重启（杀后原参数拉起）"
 #define M_AI_ANALY  "AI 分析此进程"

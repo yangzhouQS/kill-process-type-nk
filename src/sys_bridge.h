@@ -18,6 +18,16 @@ void SysFlashTrayWindow(void);
 int SysRelaunch(const char *path, const char *cmdline); /* 杀后原参数拉起 */
 void SysClampWindowRect(int *x, int *y, int *w, int *h); /* 防呆：限制到虚拟屏幕内 */
 int SysRestartElevated(void); /* 以管理员权限重启自身（成功不返回） */
+typedef struct {
+    unsigned long pid;
+    char title[128];      /* 主窗口标题（无窗口为空） */
+    unsigned long threads;
+    unsigned long handles;
+    char startTime[32];   /* 进程启动时间 */
+} SysProcDetail;
+
+int SysQueryProcDetail(unsigned long pid, SysProcDetail *out);
+
 unsigned char *SysExtractIconRGBA(const char *exePath, int size, int *outW, int *outH); /* 调用方 free */             /* 唤起已有实例窗口 */
 
 #ifdef __cplusplus
