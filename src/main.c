@@ -20,9 +20,11 @@ static int sRefreshPending = 0;
 
 static void RefreshData(void)
 {
-    /* 异步：后台线程扫描，完成后由主循环 poll 交付（避免卡帧） */
-    if (bridge_scan_async_start())
-        sRefreshPending = 1;
+    /* 【二分测试：临时回退同步刷新，定位异步竞态崩溃】 */
+    bridge_free_processes(&gApp.procs);
+    bridge_free_ports(&gApp.ports);
+    bridge_scan_processes(&gApp.procs);
+    bridge_scan_ports(&gApp.ports);
     gApp.lastRefresh = GetTime();
 }
 
@@ -137,6 +139,8 @@ void MainToolbarAction(int id)
 
 extern int CliRun(int argc, char **argv); /* cli.c */
 
+static void SaveWindowState(void);
+
 int main(int argc, char **argv)
 {
     if (argc >= 2 &&
@@ -222,6 +226,7 @@ int main(int argc, char **argv)
 
     double lastOrphanRun = GetTime();
     double lastAnomalyCheck = GetTime();
+    double lastMemDiag = GetTime();
     if (bridge_config_bool("StartMinimized", 0))
         MinimizeToTray();
 
@@ -302,6 +307,19 @@ int main(int argc, char **argv)
             GetTime() - gApp.lastRefresh > (double)gApp.autoRefreshSec) {
             MainUiRefresh();
             bridge_monitor_sync(&gApp.procs);
+        }
+
+        /* 内存诊断日志（每 30s） */
+        if (GetTime() - lastMemDiag > 30.0) {
+            lastMemDiag = GetTime();
+            FILE *ml = fopen("build/mem_diag.log", "a");
+            if (ml) {
+                fprintf(ml, '%.0fs WS=%luMB Handles=%lu Procs=%d Ports=%d AI=%d Modal=%d\n',
+                        GetTime(), SysSelfWorkingSetMB(), SysSelfHandles(),
+                        (int)gApp.procs.count, (int)gApp.ports.count,
+                        gApp.aiOutput ? (int)strlen(gApp.aiOutput) : 0, gApp.modal);
+                fclose(ml);
+            }
         }
 
         /* 异常检测（AnomalyWatch）：node/python 内存 12s 连涨 >10MB 告警 */

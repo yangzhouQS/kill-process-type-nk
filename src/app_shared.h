@@ -159,3 +159,14 @@ const char *ProcTypeName(int type);
 void SetFlashMsg(const char *fmt, ...);
 
 #endif /* APP_SHARED_H */
+
+/* 诊断追踪（每条 fopen append，崩溃安全） */
+static void TraceFile(const char *msg)
+{
+    FILE *f = fopen("build/trace.log", "a");
+    if (f) {
+        fputs(msg, f);
+        fputc('\n', f);
+        fclose(f);
+    }
+}

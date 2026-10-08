@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <shlobj.h>
 #include <tlhelp32.h>
+#include <psapi.h>
 
 #include "sys_bridge.h"
 #include "version.h"
@@ -286,10 +287,53 @@ int SysDownloadsDir(char *out, int cap)
     return 0;
 }
 
+unsigned long SysSelfWorkingSetMB(void)
+{
+    PROCESS_MEMORY_COUNTERS pmc;
+    ZeroMemory(&pmc, sizeof(pmc));
+    pmc.cb = sizeof(pmc);
+    if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))
+        return (unsigned long)(pmc.WorkingSetSize / (1024 * 1024));
+    return 0;
+}
+
+unsigned long SysSelfHandles(void)
+{
+    DWORD handles = 0;
+    if (GetProcessHandleCount(GetCurrentProcess(), &handles))
+        return handles;
+    return 0;
+}
+
 void SysTimestamp(char *out, int cap)
 {
     SYSTEMTIME st;
     GetLocalTime(&st);
     snprintf(out, cap, "%04d-%02d-%02d_%02d%02d%02d",
              st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+}
+
+static LONG WINAPI SysCrashHandler(EXCEPTION_POINTERS *ep)
+{
+    FILE *f = fopen("build/crash.txt", "a");
+    if (f) {
+        HMODULE msvcrt = GetModuleHandleA("msvcrt.dll");
+        HMODULE self = GetModuleHandleA(NULL);
+        long long off = 0;
+        if (msvcrt)
+            off = (long long)ep->ExceptionRecord->ExceptionAddress - (long long)msvcrt;
+        fprintf(f, "CRASH code=0x%08lX addr=%p rip=%p msvcrt_base=%p msvcrt_off=0x%llX self_off=0x%llX\n",
+                (unsigned long)ep->ExceptionRecord->ExceptionCode,
+                ep->ExceptionRecord->ExceptionAddress,
+                (void *)ep->ContextRecord->Rip,
+                (void *)msvcrt, (unsigned long long)off,
+                self ? (unsigned long long)ep->ContextRecord->Rip - (unsigned long long)self : 0);
+        fclose(f);
+    }
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
+void SysInstallCrashHandler(void)
+{
+    SetUnhandledExceptionFilter(SysCrashHandler);
 }
